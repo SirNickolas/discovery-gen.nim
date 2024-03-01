@@ -1,3 +1,4 @@
+import std/options
 import ./private/kdlDecoding
 
 export KdlDeserializationError, KdlDoc
@@ -13,11 +14,11 @@ type
 
   RawApiOverride* = object
     targets*: seq[string]
-    discovery*: string
+    discovery*: Option[string]
 
   RawApi* = object
     ids*: seq[string]
-    discovery*: string
+    discovery*: Option[string]
     overrides*: seq[RawApiOverride]
 
   RawTargetOverride* = object
@@ -26,7 +27,7 @@ type
 
   RawTarget* = object
     id*: string
-    lang*: string
+    lang*: Option[string]
     settings*: KdlDoc
     overrides*: seq[RawTargetOverride]
 

@@ -2,7 +2,8 @@ import std/options
 import std/sets
 from   kdl/types import KdlError
 from   kdl/parser import parseKdlFile
-import ./discoveryGen/rawConfigLoading
+import ./discoveryGen/configLoading
+from   ./discoveryGen/rawConfigLoading import loadRawConfig
 
 type
   HashSetPatchMode* = enum
@@ -15,7 +16,7 @@ type
   DiscoveryGenError* = object of CatchableError
 
 proc genDiscoveryApis*(
-  cfg: RawConfig; apis = default HashSetPatch[string]; targets = default HashSetPatch[string];
+  cfg: Config; apis = default HashSetPatch[string]; targets = default HashSetPatch[string];
 ) =
   echo cfg, '\n', apis, '\n', targets
 
@@ -33,7 +34,7 @@ proc genDiscoveryApis*(
       except KdlError as e:
         raise newException(DiscoveryGenError, "KDL parsing error: " & e.msg, e)
     try:
-      loadRawConfig doc
+      doc.loadRawConfig.convertRawConfig
     except KdlDeserializationError as e:
       var report = e.msg & ':'
       for msg in e.errors:

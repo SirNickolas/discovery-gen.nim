@@ -1,5 +1,6 @@
 import std/options
 import std/sets
+from   std/strutils import endsWith
 import cligen
 import ../discoveryGen
 
@@ -20,14 +21,23 @@ proc genDiscoveryApisFromCli*(
   withoutApi = none HashSet[string];
   withTarget = none HashSet[string];
   withoutTarget = none HashSet[string];
-) =
-  genDiscoveryApis(
-    config, apiRoot, targetRoot,
-    combine(withApi, withoutApi) do:
-      "`--with-api` and `--without-api` are mutually exclusive.\n",
-    combine(withTarget, withoutTarget) do:
-      "`--with-target` and `--without-target` are mutually exclusive.\n",
-  )
+): int =
+  try:
+    genDiscoveryApis(
+      config, apiRoot, targetRoot,
+      combine(withApi, withoutApi) do:
+        "`--with-api` and `--without-api` are mutually exclusive.\n",
+      combine(withTarget, withoutTarget) do:
+        "`--with-target` and `--without-target` are mutually exclusive.\n",
+    )
+  except DiscoveryGenError as e:
+    var msg = move e.msg
+    if not msg.endsWith '\n':
+      # if not msg.endsWith '.':
+      #   msg &= '.'
+      msg &= '\n'
+    stderr.write msg
+    return 1
 
 proc argHelp*[T](defaultVal: Option[T]; ap: var ArgcvtParams): seq[string] =
   result = argHelp(defaultVal.get default T, ap)

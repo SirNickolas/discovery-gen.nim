@@ -6,6 +6,7 @@ license     = "MIT"
 requires(
   "nim >= 1.6.0",
   "cligen >= 1.5.0",
+  "jsony >= 1.1.0",
   "kdl >= 2.0.0",
   "sourcegens >= 0.1.0",
 )

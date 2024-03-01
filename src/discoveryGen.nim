@@ -1,8 +1,12 @@
 import std/options
+from   std/paths import `/`, Path
 import std/sets
+import std/tables
+import jsony
 from   kdl/types import KdlError
 from   kdl/parser import parseKdlFile
 import ./discoveryGen/configLoading
+import ./discoveryGen/discovery
 from   ./discoveryGen/rawConfigLoading import loadRawConfig
 
 type
@@ -18,7 +22,13 @@ type
 proc genDiscoveryApis*(
   cfg: Config; apis = default HashSetPatch[string]; targets = default HashSetPatch[string];
 ) =
-  echo cfg, '\n', apis, '\n', targets
+  for api in cfg.apis.values:
+    let json = block:
+      var f = open string cfg.apiRoot.Path / api.settings.discoveryPath.get.Path
+      defer: f.close
+      f.readAll
+    let schema = json.fromJson DiscoveryRestDescription
+    echo schema
 
 proc genDiscoveryApis*(
   configPath: string;

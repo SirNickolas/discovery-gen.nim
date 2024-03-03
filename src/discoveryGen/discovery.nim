@@ -24,7 +24,7 @@ type
     required*: seq[string]
       ## A list of methods that require this property on requests.
 
-  DiscoveryJsonSchema* = ref object
+  DiscoveryJsonSchema* = object
     ## An individual schema description.
     id*: string
       ## Unique identifier for this schema.
@@ -60,7 +60,7 @@ type
       ## Whether this parameter goes in the query or the path for REST requests.
     properties*: Table[string, DiscoveryJsonSchema]
       ## If this is a schema for an object, list the schema for each property of this object.
-    items*: Option[DiscoveryJsonSchema]
+    items*: Option[ref DiscoveryJsonSchema]
       ## If this is a schema for an array, this property is the schema for each element in
       ## the array.
     annotations*: Option[DiscoveryAnnotations]

@@ -123,3 +123,8 @@ proc convertRawConfig*(raw: sink RawConfig): Config =
 
   if c.errors.len != 0:
     raise (ref KdlDeserializationError)(msg: "Config validation failed", errors: move c.errors)
+
+func getSettingsForApi*(target: Target; api: string): KdlDoc =
+  result = target.settings
+  if (let override = target.overrides.getOrDefault api; override != nil):
+    result &= override[]

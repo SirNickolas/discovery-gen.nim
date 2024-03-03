@@ -32,8 +32,9 @@ let defaultBackends = {
 
 proc readSchemas(cfg: Config): seq[DiscoveryRestDescription] =
   for api in cfg.apis.values:
+    # TODO: Handle `api.settings.schema.isNone`.
     result &=
-      readFile(string cfg.apiRoot / api.settings.discoveryPath.get)
+      readFile(string cfg.apiRoot / api.settings.schema.get)
       .fromJson DiscoveryRestDescription
 
 template changeCurrentDir(path: Path) =
@@ -53,7 +54,7 @@ proc genDiscoveryApis*(
   for apiIndex, apiId in enumerate cfg.apis.keys:
     # TODO: Respect `targets`.
     for target in cfg.targets.values:
-      let cgt = defaultBackends[target.lang]:
+      let cgt = defaultBackends[target.backend]:
         newTargetConfig(schemas[apiIndex], target.getSettingsForApi apiId)
       for spec in cgt.values:
         dirs.createDir spec.path.Path.parentDir

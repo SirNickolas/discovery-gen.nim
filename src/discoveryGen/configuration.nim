@@ -9,7 +9,7 @@ export KdlDeserializationError, KdlDoc
 
 type
   ApiSettings* = object
-    discoveryPath*: Option[Path]
+    schema*: Option[Path]
 
   Api* = ref object
     id*: string
@@ -17,7 +17,7 @@ type
     overrides*: Table[string, ref ApiSettings]
 
   Target* = ref object
-    id*, lang*: string
+    id*, backend*: string
     settings*: KdlDoc
     overrides*: Table[string, ref KdlDoc]
 
@@ -65,12 +65,12 @@ proc convertApi(c: var Context; cfg: var Config; rawApi: sink RawApi) =
       api.id = move id
       api
 
-  if rawApi.discovery.isSome:
+  if rawApi.schema.isSome:
     for api in c.selectedApis:
-      api.settings.discoveryPath = rawApi.discovery
+      api.settings.schema = rawApi.schema
 
   for rawOverride in rawApi.overrides.mitems:
-    let settings = (ref ApiSettings)(discoveryPath: move rawOverride.discovery)
+    let settings = (ref ApiSettings)(schema: move rawOverride.schema)
     for id in rawOverride.targets:
       discard cfg.targets.getOrNew id
       for api in c.selectedApis:
@@ -83,11 +83,11 @@ proc convertTarget(c: var Context; cfg: var Config; rawTarget: sink RawTarget) =
 
   let target = cfg.targets.getOrNew rawTarget.id
   target.id = move rawTarget.id
-  if rawTarget.lang.isSome:
-    target.lang = move rawTarget.lang.get
+  if rawTarget.backend.isSome:
+    target.backend = move rawTarget.backend.get
   else:
     # TODO: Try to check that during deserialization.
-    c.errors &= &"Target {Quoted target.id} is missing lang= property."
+    c.errors &= &"Target {Quoted target.id} is missing backend= property."
 
   target.settings = move rawTarget.settings
   for rawOverride in rawTarget.overrides.mitems:

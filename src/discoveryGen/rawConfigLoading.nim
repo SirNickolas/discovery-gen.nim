@@ -11,15 +11,15 @@ const
 type
   # TODO: Use when some form of `{.kdlEmbedded.}` is implemented.
   # RawApiSettings* = object
-  #   discovery*: string
+  #   schema*: Option[Path]
 
   RawApiOverride* = object
     targets*: seq[string]
-    discovery*: Option[Path]
+    schema*: Option[Path]
 
   RawApi* = object
     ids*: seq[string]
-    discovery*: Option[Path]
+    schema*: Option[Path]
     overrides*: seq[RawApiOverride]
 
   RawTargetOverride* = object
@@ -28,7 +28,7 @@ type
 
   RawTarget* = object
     id*: string
-    lang*: Option[string]
+    backend*: Option[string]
     settings*: KdlDoc
     overrides*: seq[RawTargetOverride]
 
@@ -60,10 +60,11 @@ template getKdlArgFields*(T: type RawTarget): seq[string] =
   @["id"]
 
 template getKdlPropFields*(T: type RawTarget): seq[string] =
-  @["lang"]
+  @["backend"]
 
 func getKdlFieldNames*(T: type RawTarget; field: string): seq[string] = @[
   case field
+  of "settings": "default"
   of "overrides": "withApis"
   else: field
 ]

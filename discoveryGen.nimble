@@ -4,7 +4,7 @@ description = "Generate an API in a language of your choice from a Google Discov
 license     = "MIT"
 
 requires(
-  "nim >= 1.6.0",
+  "nim >= 2.0.0",
   "cligen >= 1.5.0",
   "jsony >= 1.1.0",
   "kdl >= 2.0.0",

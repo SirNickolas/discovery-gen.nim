@@ -24,23 +24,23 @@ proc genDiscoveryApis*(
 ) =
   for api in cfg.apis.values:
     let json = block:
-      var f = open string cfg.apiRoot.Path / api.settings.discoveryPath.get.Path
+      var f = open string cfg.apiRoot / api.settings.discoveryPath.get
       defer: f.close
       f.readAll
     let schema = json.fromJson DiscoveryRestDescription
     echo schema
 
 proc genDiscoveryApis*(
-  configPath: string;
-  apiRoot = none string;
-  targetRoot = none string;
+  configPath: Path;
+  apiRoot = none Path;
+  targetRoot = none Path;
   apis = default HashSetPatch[string];
   targets = default HashSetPatch[string];
 ) =
   var cfg = block:
     let doc =
       try:
-        parseKdlFile configPath
+        parseKdlFile configPath.string
       except KdlError as e:
         raise newException(DiscoveryGenError, "KDL parsing error: " & e.msg, e)
     try:
@@ -57,4 +57,4 @@ proc genDiscoveryApis*(
   if targetRoot.isSome:
     cfg.targetRoot = targetRoot.unsafeGet
 
-  genDiscoveryApis(cfg, apis, targets)
+  cfg.genDiscoveryApis(apis, targets)

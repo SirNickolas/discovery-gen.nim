@@ -1,4 +1,5 @@
 import std/options
+from   std/paths import Path
 import ./private/kdlDecoding
 
 export KdlDeserializationError, KdlDoc
@@ -14,11 +15,11 @@ type
 
   RawApiOverride* = object
     targets*: seq[string]
-    discovery*: Option[string]
+    discovery*: Option[Path]
 
   RawApi* = object
     ids*: seq[string]
-    discovery*: Option[string]
+    discovery*: Option[Path]
     overrides*: seq[RawApiOverride]
 
   RawTargetOverride* = object
@@ -33,7 +34,7 @@ type
 
   RawConfig* = object
     strict*: bool
-    apiRoot*, targetRoot*: string
+    apiRoot*, targetRoot*: Path
     apis*: seq[RawApi]
     targets*: seq[RawTarget]
 

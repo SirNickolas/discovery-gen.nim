@@ -1,4 +1,5 @@
 import std/options
+from   std/paths import Path
 import std/sets
 from   std/strutils import endsWith
 import cligen
@@ -14,9 +15,9 @@ func combine[T](only, allBut: sink Option[HashSet[T]]; msg: string): HashSetPatc
     result.elems = move allBut.get
 
 proc genDiscoveryApisFromCli*(
-  config: string;
-  apiRoot = none string;
-  targetRoot = none string;
+  config: Path;
+  apiRoot = none Path;
+  targetRoot = none Path;
   withApi = none HashSet[string];
   withoutApi = none HashSet[string];
   withTarget = none HashSet[string];
@@ -38,6 +39,12 @@ proc genDiscoveryApisFromCli*(
       msg &= '\n'
     stderr.write msg
     return 1
+
+proc argHelp*(defaultVal: Path; ap: var ArgcvtParams): seq[string] =
+  argHelp(defaultVal.string, ap)
+
+proc argParse*(dest: var Path; defaultVal: Path; ap: var ArgcvtParams): bool =
+  argParse(dest.string, defaultVal.string, ap)
 
 proc argHelp*[T](defaultVal: Option[T]; ap: var ArgcvtParams): seq[string] =
   result = argHelp(defaultVal.get default T, ap)

@@ -1,4 +1,5 @@
 import std/options
+from   std/paths import Path
 import std/sets
 import std/strformat
 import std/tables
@@ -8,7 +9,7 @@ export KdlDeserializationError, KdlDoc
 
 type
   ApiSettings* = object
-    discoveryPath*: Option[string]
+    discoveryPath*: Option[Path]
 
   Api* = ref object
     id*: string
@@ -22,7 +23,7 @@ type
 
   Config* = object
     strict*: bool
-    apiRoot*, targetRoot*: string
+    apiRoot*, targetRoot*: Path
     apis*: Table[string, Api]
     targets*: Table[string, Target]
 

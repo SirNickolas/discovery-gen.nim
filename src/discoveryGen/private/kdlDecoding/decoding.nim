@@ -1,4 +1,5 @@
 import std/options
+from   std/paths import Path
 import std/sets
 import std/strformat
 import std/tables
@@ -12,7 +13,7 @@ export
 
 type
   SeqOrSomeSet*[T] = seq[T] | SomeSet[T]
-  SimpleKdlVal* = bool | int64 | float | string | Option[SimpleKdlVal]
+  SimpleKdlVal* = bool | int64 | float | string | Path | Option[SimpleKdlVal]
   Quoted = distinct string
   BareNode {.borrow: `.`.} = distinct KdlNode
 
@@ -82,6 +83,9 @@ proc deserializeKdlVal*(val: KdlVal; dest: var string): bool =
   result = val.isString
   if result:
     dest = val.str
+
+template deserializeKdlVal*(val: KdlVal; dest: Path): bool =
+  val.deserializeKdlVal dest.string
 
 #[
 proc deserializeKdlVal*[T](val: KdlVal; dest: var ref T): bool =

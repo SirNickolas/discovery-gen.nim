@@ -9,6 +9,8 @@ type
 
   Backend* = proc (cfg: TargetConfig): GenFilesetSpec {.gcSafe.}
 
+  BackendError* = object of CatchableError
+
 func newTargetConfig*(api: sink DiscoveryRestDescription; settings: sink KdlDoc): TargetConfig =
   TargetConfig(api: api, settings: settings)
 

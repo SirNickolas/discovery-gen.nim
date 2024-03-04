@@ -1,5 +1,4 @@
 from   std/enumerate import enumerate
-import std/options
 from   std/dirs import nil
 from   std/paths import `/`, Path, parentDir
 import std/sets
@@ -7,6 +6,7 @@ import std/tables
 import jsony
 from   kdl/types import KdlError
 from   kdl/parser import parseKdlFile
+import questionable
 from   sourcegens/codegens import run
 from   sourcegens/emission import initEmitter
 from   sourcegens/overridableTables import `[]`, toOverridableOrderedTable, values
@@ -34,7 +34,7 @@ proc readSchemas(cfg: Config): seq[DiscoveryRestDescription] =
   for api in cfg.apis.values:
     # TODO: Handle `api.settings.schema.isNone`.
     result &=
-      readFile(string cfg.apiRoot / api.settings.schema.get)
+      readFile(string cfg.apiRoot / api.settings.schema.unsafeGet)
       .fromJson DiscoveryRestDescription
 
 template changeCurrentDir(path: Path) =
@@ -88,9 +88,9 @@ proc genDiscoveryApis*(
         report &= msg
       raise newException(DiscoveryGenError, report, e)
 
-  if apiRoot.isSome:
-    cfg.apiRoot = apiRoot.unsafeGet
-  if targetRoot.isSome:
-    cfg.targetRoot = targetRoot.unsafeGet
+  if apiRoot =? apiRoot:
+    cfg.apiRoot = apiRoot
+  if targetRoot =? targetRoot:
+    cfg.targetRoot = targetRoot
 
   cfg.genDiscoveryApis(apis, targets)

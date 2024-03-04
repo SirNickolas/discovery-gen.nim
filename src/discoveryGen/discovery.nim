@@ -60,6 +60,8 @@ type
       ## Whether this parameter goes in the query or the path for REST requests.
     properties*: OrderedTable[string, DiscoveryJsonSchema]
       ## If this is a schema for an object, list the schema for each property of this object.
+    additionalProperties*: Option[ref DiscoveryJsonSchema]
+      ## If this is a schema for an object, this property is the schema for any additional properties with dynamic keys on this object.
     items*: Option[ref DiscoveryJsonSchema]
       ## If this is a schema for an array, this property is the schema for each element in
       ## the array.

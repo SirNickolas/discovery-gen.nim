@@ -58,7 +58,7 @@ type
       ## Whether this parameter may appear multiple times.
     location*: string
       ## Whether this parameter goes in the query or the path for REST requests.
-    properties*: Table[string, DiscoveryJsonSchema]
+    properties*: OrderedTable[string, DiscoveryJsonSchema]
       ## If this is a schema for an object, list the schema for each property of this object.
     items*: Option[ref DiscoveryJsonSchema]
       ## If this is a schema for an array, this property is the schema for each element in
@@ -72,7 +72,7 @@ type
       ## Description of scope.
 
   DiscoveryOAuth2* = object
-    scopes*: Table[string, DiscoveryOAuth2Scope]
+    scopes*: OrderedTable[string, DiscoveryOAuth2Scope]
       ## Available OAuth 2.0 scopes.
 
   DiscoveryAuth* = object
@@ -120,7 +120,7 @@ type
       ## Description of this method.
     deprecated*: bool
       ## Whether this method is deprecated.
-    parameters*: Table[string, DiscoveryJsonSchema]
+    parameters*: OrderedTable[string, DiscoveryJsonSchema]
       ## Details for all parameters in this method.
     parameterOrder*: seq[string]
       ## Ordered list of required parameters. This serves as a hint to clients on how to structure
@@ -152,7 +152,7 @@ type
   DiscoveryRestResource* = object
     ## An individual resource description. Contains methods and sub-resources related to this
     ## resource.
-    methods*: Table[string, DiscoveryRestMethod]
+    methods*: OrderedTable[string, DiscoveryRestMethod]
       ## Methods on this resource.
     deprecated*: bool
       ## Whether this resource is deprecated.
@@ -192,15 +192,15 @@ type
     endpoints*: seq[DiscoveryEndpoint]
       ## A list of location-based endpoint objects for this API. Each object contains the endpoint
       ## URL, location, description and deprecation status.
-    parameters*: Table[string, DiscoveryJsonSchema]
+    parameters*: OrderedTable[string, DiscoveryJsonSchema]
       ## Common parameters that apply across all apis.
     auth*: DiscoveryAuth
       ## Authentication information.
     features*: seq[string]
       ## A list of supported features for this API.
-    schemas*: Table[string, DiscoveryJsonSchema]
+    schemas*: OrderedTable[string, DiscoveryJsonSchema]
       ## The schemas for this API.
-    methods*: Table[string, DiscoveryRestMethod]
+    methods*: OrderedTable[string, DiscoveryRestMethod]
       ## API-level methods for this API.
     # baseUrl*: string
     #   ## [DEPRECATED] The base URL for REST requests.

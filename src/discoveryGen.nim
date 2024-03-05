@@ -13,8 +13,8 @@ from   sourcegens/overridableTables import `[]`, toOverridableOrderedTable, valu
 from   ./discoveryGen/backends import newTargetConfig
 from   ./discoveryGen/backends/d import initDTarget
 import ./discoveryGen/configuration
-import ./discoveryGen/discovery
 from   ./discoveryGen/rawConfigLoading import loadRawConfig
+import ./discoveryGen/rawDiscovery
 
 type
   HashSetPatchMode* = enum

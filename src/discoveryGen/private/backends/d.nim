@@ -1,7 +1,7 @@
 import std/sets
 import std/tables
 from   ../../backends import BackendError
-from   ../../discovery import DiscoveryJsonSchema, DiscoveryRestDescription
+from   ../../rawDiscovery import DiscoveryJsonSchema, DiscoveryRestDescription
 
 type
   Settings* = object

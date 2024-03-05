@@ -11,9 +11,9 @@ import sourcegens/identStyles
 from   sourcegens/overridableTables import toOverridableTable
 from   sourcegens/utils import dd
 import ../backends
-from   ../discovery import DiscoveryJsonSchema
 from   ../private/backends/d import Context, Settings, prepare
 from   ../private/kdlDecoding import deserializeKdlDoc
+from   ../rawDiscovery import DiscoveryJsonSchema
 
 using e: var Emitter
 

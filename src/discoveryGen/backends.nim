@@ -1,6 +1,6 @@
 from kdl/types import KdlDoc
 from sourcegens/codegens import GenFilesetSpec
-from ./discovery import DiscoveryRestDescription
+from ./rawDiscovery import DiscoveryRestDescription
 
 type
   TargetConfig* = ref object

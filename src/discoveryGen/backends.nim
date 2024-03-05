@@ -1,18 +1,19 @@
 from kdl/types import KdlDoc
 from sourcegens/codegens import GenFilesetSpec
 from ./rawDiscovery import DiscoveryRestDescription
+from ./discovery/analysis import AnalyzedApi, analyze
 
 type
   TargetConfig* = ref object
-    api: DiscoveryRestDescription
-    settings: KdlDoc
+    api: AnalyzedApi
+    rawApi: DiscoveryRestDescription
 
-  Backend* = proc (cfg: TargetConfig): GenFilesetSpec {.gcSafe.}
+  Backend* = proc (cfg: TargetConfig; settings: sink KdlDoc): GenFilesetSpec {.gcSafe.}
 
   BackendError* = object of CatchableError
 
-func newTargetConfig*(api: sink DiscoveryRestDescription; settings: sink KdlDoc): TargetConfig =
-  TargetConfig(api: api, settings: settings)
+func newTargetConfig*(rawApi: sink DiscoveryRestDescription): TargetConfig =
+  TargetConfig(api: rawApi.analyze, rawApi: rawApi)
 
-template api*(cfg: TargetConfig): DiscoveryRestDescription = cfg.api
-template settings*(cfg: TargetConfig): KdlDoc = cfg.settings
+func api*(cfg: TargetConfig): lent AnalyzedApi = cfg.api
+func rawApi*(cfg: TargetConfig): lent DiscoveryRestDescription = cfg.rawApi

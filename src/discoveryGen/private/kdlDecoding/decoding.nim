@@ -22,10 +22,10 @@ using
   errors: var seq[string]
   strict: bool
 
-template `&=`[T](x: var SomeSet[T]; y: T) =
+template `&=`[T](x: SomeSet[T]; y: T) =
   x.incl y
 
-template formatValue(s: var string; val: Quoted; _: string) =
+template formatValue(s: string; val: Quoted; _: string) =
   s.addQuoted val.string
 
 proc formatValue(s: var string; val: BareNode; _: string) =

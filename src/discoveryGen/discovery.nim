@@ -13,6 +13,7 @@ type
     pattern*: string
     hasPattern*: bool
     hasDefault*: bool
+    hasMin*, hasMax*: bool # Can only be present for `stkI32` and `stkU32`.
     required*: bool
     deprecated*: bool
     readOnly*: bool
@@ -26,9 +27,9 @@ type
     of stkF64: # Always `hasDefault`.
       defaultF64*: float
     of stkI32:
-      defaultI32*: int32
+      defaultI32*, minI32*, maxI32*: int32
     of stkU32:
-      defaultU32*: uint32
+      defaultU32*, minU32*, maxU32*: uint32
     of stkI64:
       defaultI64*: int64
     of stkU64:

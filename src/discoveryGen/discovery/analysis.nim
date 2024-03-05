@@ -35,6 +35,7 @@ type
 
   DiscoveryAnalysisError* = object of CatchableError
   InvalidDefaultError* = object of DiscoveryAnalysisError
+  InvalidBoundaryError* = object of DiscoveryAnalysisError
   UnknownFormatError* = object of DiscoveryAnalysisError
   MissingFieldError* = object of DiscoveryAnalysisError
 
@@ -47,6 +48,9 @@ template formatValue(s: string; val: Quoted; _: string) =
 
 func raiseInvalidDefault(val, ty: string) {.noReturn, noInline.} =
   raise InvalidDefaultError.newException &"Invalid default value {Quoted val} for type \"{ty}\""
+
+func raiseInvalidBoundary(val, ty: string) {.noReturn, noInline.} =
+  raise InvalidBoundaryError.newException &"Invalid boundary {Quoted val} for type \"{ty}\""
 
 func raiseUnknownFormat(format, ty: string) {.noReturn, noInline.} =
   raise UnknownFormatError.newException &"Unknown format {Quoted format} for type \"{ty}\""
@@ -65,24 +69,34 @@ func parseBooleanType(def: ?string): ScalarType =
     of "true": result.defaultBool = true
     else: raiseInvalidDefault def, ty = "boolean"
 
-func parseIntegerType(format: string; def: ?string): ScalarType =
+proc parseIntegerInto[T: int32 | uint32](s: string; dest: var T): bool =
+  let x = su.parseBiggestInt s
+  if x in T.low.int64 .. T.high.int64:
+    dest = T x
+    result = true
+
+proc tee(x: bool; dest: var bool): bool =
+  dest = x
+  x
+
+func parseIntegerType(format: string; def, minimum, maximum: ?string): ScalarType =
   case format
   of "int32":
     result = ScalarType(kind: stkI32)
-    if def =? def:
-      let x = su.parseBiggestInt def
-      if x not_in int32.low .. int32.high:
-        raiseInvalidDefault def, ty = "integer/int32"
-      result.hasDefault = true
-      result.defaultI32 = x.int32
+    if def =? def and not def.parseIntegerInto(result.defaultI32).tee(result.hasDefault):
+      raiseInvalidDefault def, ty = "integer/int32"
+    if minimum =? minimum and not minimum.parseIntegerInto(result.minI32).tee(result.hasMin):
+      raiseInvalidBoundary minimum, ty = "integer/int32"
+    if maximum =? maximum and not maximum.parseIntegerInto(result.maxI32).tee(result.hasMax):
+      raiseInvalidBoundary maximum, ty = "integer/int32"
   of "uint32":
     result = ScalarType(kind: stkU32)
-    if def =? def:
-      let x = su.parseBiggestInt def
-      if x not_in 0'i64 .. uint32.high.int64:
-        raiseInvalidDefault def, ty = "integer/uint32"
-      result.hasDefault = true
-      result.defaultU32 = x.uint32
+    if def =? def and not def.parseIntegerInto(result.defaultU32).tee(result.hasDefault):
+      raiseInvalidDefault def, ty = "integer/uint32"
+    if minimum =? minimum and not minimum.parseIntegerInto(result.minU32).tee(result.hasMin):
+      raiseInvalidBoundary minimum, ty = "integer/uint32"
+    if maximum =? maximum and not maximum.parseIntegerInto(result.maxU32).tee(result.hasMax):
+      raiseInvalidBoundary maximum, ty = "integer/uint32"
   else:
     raiseUnknownFormat format, ty = "integer"
 
@@ -187,7 +201,7 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
         break
       of "integer":
         if format =? member.format:
-          result.scalar = parseIntegerType(format, member.default)
+          result.scalar = parseIntegerType(format, member.default, member.minimum, member.maximum)
           break
         raiseMissingField "format", ty = "integer"
       of "number":
@@ -253,7 +267,7 @@ proc analyzeStructBody(c; members: OrderedTable[string, DiscoveryJsonSchema]): S
   for i, (name, member) in enumerate members.pairs:
     c.curMemberName = name
     let (ty, description) = c.analyzeMemberType(member, result.info)
-    result.members[i] = ((name, ty), @[description])
+    result.members[i] = ((name, ty), if description.len != 0: @[description] else: @[])
 
   result.members.sort do (a, b: StructMember) -> int:
     cmp(a.m.ty, b.m.ty)

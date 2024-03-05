@@ -27,6 +27,8 @@ type
     udaDuration
     udaEmbedNullable
     udaFieldMask
+    udaMaximum
+    udaMinimum
     udaName
     udaOptional
     udaPattern
@@ -146,6 +148,20 @@ proc emitStruct(e; schema: DiscoveryJsonSchema) =
 func needsNullable(ty: Type): bool =
   not ty.scalar.hasDefault and ty.containers.len == 0
 
+func formatMin(scalar: ScalarType): string =
+  if scalar.kind == stkI32:
+    result = $scalar.minI32
+  else:
+    result = $scalar.minU32
+    result &= 'u'
+
+func formatMax(scalar: ScalarType): string =
+  if scalar.kind == stkI32:
+    result = $scalar.maxI32
+  else:
+    result = $scalar.maxU32
+    result &= 'u'
+
 proc emitAltDocs(e; docs: openArray[string]) =
   if docs.len != 0:
     e.emit &"/// {docs[0].toComment}\p"
@@ -186,6 +202,8 @@ func initStructBodyContext(members: openArray[StructMember]): StructBodyContext 
       of "duration":      udaDuration
       of "embedNullable": udaEmbedNullable
       of "fieldMask":     udaFieldMask
+      of "maximum":       udaMaximum
+      of "minimum":       udaMinimum
       of "name":          udaName
       of "optional":      udaOptional
       of "pattern":       udaPattern
@@ -200,6 +218,10 @@ iterator memberUdas(c: StructBodyContext; memberId: int; m: Member): (UdaName, s
     yield (udaName, &"name({Quoted m.name})")
   if scalar.readOnly:
     yield (udaReadOnly, "readOnly")
+  if scalar.hasMin:
+    yield (udaMinimum, &"minimum({scalar.formatMin})")
+  if scalar.hasMax:
+    yield (udaMaximum, &"maximum({scalar.formatMax})")
   if scalar.hasPattern:
     yield (udaPattern, &"pattern({Quoted scalar.pattern})")
   block blk:

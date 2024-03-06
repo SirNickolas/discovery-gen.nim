@@ -12,7 +12,7 @@ from   sourcegens/overridableTables import toOverridableTable
 from   sourcegens/utils import dd
 import ../backends
 import ../discovery
-from   ../private/kdlDecoding import KdlDoc, deserializeKdlDoc
+from   ../private/kdlDecoding import KdlDeserializationError, KdlDoc, deserializeKdlDoc
 from   ../rawDiscovery import DiscoveryJsonSchema, DiscoveryRestDescription
 
 type Settings = object
@@ -362,11 +362,20 @@ func prepareFiles(c; settings): seq[(string, GenFileSpec)] =
     codegen: c.initTypesCodegen settings,
   ))
 
-proc deserializeSettings(settings: var Settings; doc: KdlDoc) {.tags: [].} =
-  doc.deserializeKdlDoc settings, strict = false
+func deserializeSettings(doc: KdlDoc; settings: var Settings) =
+  var errors: seq[string]
+  doc.deserializeKdlDoc settings, errors, strict = false
+  if settings.pathPattern.len == 0:
+    errors &= "Missing `path`."
+
+  if errors.len != 0:
+    raise (ref KdlDeserializationError)(msg: "The D backend is misconfigured", errors: errors)
 
 func initDTarget*(c: TargetConfig; settings: sink KdlDoc): GenFilesetSpec =
-  let dSettings = (ref Settings)(indentation: "\t") # I cannot deny tabs are more compact.
+  let dSettings = (ref Settings)(
+    package: "google_api",
+    indentation: "\t", # I cannot deny tabs are more compact.
+  )
   {.cast(noSideEffect).}:
-    dSettings[].deserializeSettings settings
+    settings.deserializeSettings dSettings[]
   c.prepareFiles(dSettings).toOverridableTable '#'

@@ -66,6 +66,23 @@ proc formatValue(s: var string; val: Quoted; _: string) =
   else:
     s.addQuoted val.string
 
+func needsNullable(ty: Type): bool =
+  stfHasDefault not_in ty.scalar.flags and ty.containers.len == 0
+
+template formatEitherInteger(kind: ScalarTypeKind; i32: int32; u32: uint32): string =
+  if kind == stkI32:
+    $i32
+  else:
+    var s = $u32
+    s &= 'u'
+    s
+
+func formatMin(scalar: ScalarType): string =
+  formatEitherInteger(scalar.kind, scalar.minI32, scalar.minU32)
+
+func formatMax(scalar: ScalarType): string =
+  formatEitherInteger(scalar.kind, scalar.maxI32, scalar.maxU32)
+
 func toComment(s: string): string =
   # TODO: Perform a smarter replacement.
   s.replace("\n", "\p///\p/// ")
@@ -75,23 +92,6 @@ proc emitDocComment(e; doc: string) =
     e.emit &"/// {doc.toComment}\p"
   else:
     e.emit "///\p"
-
-func needsNullable(ty: Type): bool =
-  stfHasDefault not_in ty.scalar.flags and ty.containers.len == 0
-
-func formatMin(scalar: ScalarType): string =
-  if scalar.kind == stkI32:
-    result = $scalar.minI32
-  else:
-    result = $scalar.minU32
-    result &= 'u'
-
-func formatMax(scalar: ScalarType): string =
-  if scalar.kind == stkI32:
-    result = $scalar.maxI32
-  else:
-    result = $scalar.maxU32
-    result &= 'u'
 
 proc emitAltDocs(e; docs: openArray[string]) =
   if docs.len != 0:
@@ -266,10 +266,7 @@ proc emitStructBody(e; api; body: StructBody) =
   e.dedent
 
 proc emitStructType(e; api; structTy: StructType) =
-  if structTy.description.len != 0:
-    e.emit &"/// {structTy.description.toComment}\p"
-  else:
-    e.emit &"///\p"
+  e.emitDocComment structTy.description
   e.emit &"struct {structTy.names[0].convertStyle pascalCase} {{\p"
   e.emitStructBody api, structTy.body
   e.emit "}\p"

@@ -34,8 +34,7 @@ type
     tmp: seq[(int, string)]
 
   DiscoveryAnalysisError* = object of CatchableError
-  InvalidDefaultError* = object of DiscoveryAnalysisError
-  InvalidBoundaryError* = object of DiscoveryAnalysisError
+  InvalidValueError* = object of DiscoveryAnalysisError
   UnknownFormatError* = object of DiscoveryAnalysisError
   MissingFieldError* = object of DiscoveryAnalysisError
 
@@ -46,11 +45,8 @@ using c: var Context
 template formatValue(s: string; val: Quoted; _: string) =
   s.addQuoted val.string
 
-func raiseInvalidDefault(val, ty: string) {.noReturn, noInline.} =
-  raise InvalidDefaultError.newException &"Invalid default value {Quoted val} for type \"{ty}\""
-
-func raiseInvalidBoundary(val, ty: string) {.noReturn, noInline.} =
-  raise InvalidBoundaryError.newException &"Invalid boundary {Quoted val} for type \"{ty}\""
+func raiseInvalidValue(val, ty: string) {.noReturn, noInline.} =
+  raise InvalidValueError.newException &"Invalid value {Quoted val} for type \"{ty}\""
 
 func raiseUnknownFormat(format, ty: string) {.noReturn, noInline.} =
   raise UnknownFormatError.newException &"Unknown format {Quoted format} for type \"{ty}\""
@@ -62,53 +58,47 @@ proc analyzeAnonStructType(c; members: OrderedTable[string, DiscoveryJsonSchema]
   {.raises: [DiscoveryAnalysisError, ValueError], tags: [], noSideEffect.}
 
 func parseBooleanType(def: ?string): ScalarType =
-  result = ScalarType(hasDefault: true, kind: stkBool)
+  result = ScalarType(flags: {stfHasDefault}, kind: stkBool)
   if def =? def:
     case def
     of "false": discard
     of "true": result.defaultBool = true
-    else: raiseInvalidDefault def, ty = "boolean"
+    else: raiseInvalidValue def, ty = "boolean"
 
-proc parseIntegerInto[T: int32 | uint32](s: string; dest: var T): bool =
-  let x = su.parseBiggestInt s
-  if x in T.low.int64 .. T.high.int64:
-    dest = T x
-    result = true
-
-proc tee(x: bool; dest: var bool): bool =
-  dest = x
-  x
+proc parseIntegerField[T: int32 | uint32](
+  destField: var T; val: ?string; destFlags: var set[ScalarTypeFlag]; flag: ScalarTypeFlag;
+) =
+  if val =? val:
+    let x = su.parseBiggestInt val
+    if x not_in T.low.int64 .. T.high.int64:
+      raiseInvalidValue val, ty = "integer/" & $T
+    destField = T x
+    destFlags.incl flag
 
 func parseIntegerType(format: string; def, minimum, maximum: ?string): ScalarType =
   case format
   of "int32":
     result = ScalarType(kind: stkI32)
-    if def =? def and not def.parseIntegerInto(result.defaultI32).tee(result.hasDefault):
-      raiseInvalidDefault def, ty = "integer/int32"
-    if minimum =? minimum and not minimum.parseIntegerInto(result.minI32).tee(result.hasMin):
-      raiseInvalidBoundary minimum, ty = "integer/int32"
-    if maximum =? maximum and not maximum.parseIntegerInto(result.maxI32).tee(result.hasMax):
-      raiseInvalidBoundary maximum, ty = "integer/int32"
+    parseIntegerField result.defaultI32, def, result.flags, stfHasDefault
+    parseIntegerField result.minI32, minimum, result.flags, stfHasMin
+    parseIntegerField result.maxI32, maximum, result.flags, stfHasMax
   of "uint32":
     result = ScalarType(kind: stkU32)
-    if def =? def and not def.parseIntegerInto(result.defaultU32).tee(result.hasDefault):
-      raiseInvalidDefault def, ty = "integer/uint32"
-    if minimum =? minimum and not minimum.parseIntegerInto(result.minU32).tee(result.hasMin):
-      raiseInvalidBoundary minimum, ty = "integer/uint32"
-    if maximum =? maximum and not maximum.parseIntegerInto(result.maxU32).tee(result.hasMax):
-      raiseInvalidBoundary maximum, ty = "integer/uint32"
+    parseIntegerField result.defaultU32, def, result.flags, stfHasDefault
+    parseIntegerField result.minU32, minimum, result.flags, stfHasMin
+    parseIntegerField result.maxU32, maximum, result.flags, stfHasMax
   else:
     raiseUnknownFormat format, ty = "integer"
 
 func parseNumberType(format: string; def: ?string): ScalarType =
   case format
   of "float": ScalarType(
-    hasDefault: true,
+    flags: {stfHasDefault},
     kind: stkF32,
     defaultF32: if def =? def: float32 su.parseFloat def else: NaN.float32, # No validation.
   )
   of "double": ScalarType(
-    hasDefault: true,
+    flags: {stfHasDefault},
     kind: stkF64,
     defaultF64: if def =? def: su.parseFloat def else: NaN,
   )
@@ -132,7 +122,7 @@ func parseStringFormat(format: ?string): ScalarTypeKind =
 func parseStringType(kind: ScalarTypeKind; def: ?string): ScalarType =
   result = ScalarType(kind: kind)
   if def =? def:
-    result.hasDefault = true
+    result.flags.incl stfHasDefault
     case kind:
       of stkI64: result.defaultI64 = su.parseBiggestInt def
       of stkU64: result.defaultU64 = su.parseBiggestUInt def
@@ -163,18 +153,18 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
 
 proc analyzeEnumType(c; schema: DiscoveryJsonSchema): ScalarType =
   let id = c.registerEnumType(schema.`enum`, schema.enumDescriptions, schema.enumDeprecated)
-  result = ScalarType(hasDefault: true, kind: stkEnum, enumId: id)
+  result = ScalarType(flags: {stfHasDefault}, kind: stkEnum, enumId: id)
   if def =? schema.default:
     result.defaultMember = c.enumStats[id.int].memberIds[def]
 
 proc analyzeRefType(c; name: string; checkSelfRef: bool): ScalarType =
   if name not_in c.jsonAliases:
-    result = ScalarType(hasDefault: true, kind: stkStruct, structId: c.structRegistry[name])
+    result = ScalarType(flags: {stfHasDefault}, kind: stkStruct, structId: c.structRegistry[name])
     # A simple check for self-referential types. This does not handle mutually recursive types!
     if checkSelfRef and result.structId == c.curStructId:
       result.circular = true
   else:
-    result = ScalarType(hasDefault: true, kind: stkJson)
+    result = ScalarType(flags: {stfHasDefault}, kind: stkJson)
     c.api.usesJsonType = true
 
 proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
@@ -185,15 +175,15 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
 
     if refName =? member.`$ref`:
       if def =? member.default:
-        raiseInvalidDefault def, ty = "$ref"
+        raiseInvalidValue def, ty = "$ref"
       result.scalar = c.analyzeRefType(refName, result.containers.len == 0)
       break
 
     case member.`type`:
       of "any":
         if def =? member.default:
-          raiseInvalidDefault def, ty = "any"
-        result.scalar = ScalarType(hasDefault: true, kind: stkJson)
+          raiseInvalidValue def, ty = "any"
+        result.scalar = ScalarType(flags: {stfHasDefault}, kind: stkJson)
         c.api.usesJsonType = true
         break
       of "boolean":
@@ -218,17 +208,17 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
         break
       of "array":
         if def =? member.default:
-          raiseInvalidDefault def, ty = "array"
+          raiseInvalidValue def, ty = "array"
         without itemSchema =? member.items:
           raiseMissingField "items", ty = "array"
         result.containers &= ckArray
         member = addr itemSchema[]
       of "object":
         if def =? member.default:
-          raiseInvalidDefault def, ty = "object"
+          raiseInvalidValue def, ty = "object"
         without itemSchema =? member.additionalProperties:
           result.scalar = ScalarType(
-            hasDefault: true,
+            flags: {stfHasDefault},
             kind: stkStruct,
             structId: c.analyzeAnonStructType member.properties,
           )
@@ -240,7 +230,7 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
 
   if pattern =? member.pattern:
     result.scalar.pattern = pattern
-    result.scalar.hasPattern = true
+    result.scalar.flags.incl stfHasPattern
 
 proc analyzeMemberType(c; member: DiscoveryJsonSchema; info: var StructInfo):
     tuple[ty: Type; description: string] =
@@ -248,14 +238,15 @@ proc analyzeMemberType(c; member: DiscoveryJsonSchema; info: var StructInfo):
   if member.required:
     if ty.scalar.kind == stkStruct:
       raise DiscoveryAnalysisError.newException "Unsupported required parameter of type \"object\""
-    ty.scalar.required = true
+    ty.scalar.flags.incl stfRequired
     info.hasRequiredMembers = true
 
   if member.deprecated:
-    ty.scalar.deprecated = true
+    ty.scalar.flags.incl stfDeprecated
     info.hasDeprecatedMembers = true
 
-  ty.scalar.readOnly = member.readOnly
+  if member.readOnly:
+    ty.scalar.flags.incl stfReadOnly
   (ty, member.description)
 
 proc analyzeAnonStructType(c; members: OrderedTable[string, DiscoveryJsonSchema]): StructTypeId =

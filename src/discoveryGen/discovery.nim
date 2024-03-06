@@ -5,18 +5,22 @@ type
     stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask,
     stkEnum, stkStruct
 
+  ScalarTypeFlag* = enum
+    stfHasPattern
+    stfHasDefault
+    stfHasMin # Can only be present for `stkI32` and `stkU32`.
+    stfHasMax # Ditto.
+    stfRequired
+    stfDeprecated
+    stfReadOnly
+
   StructTypeId* = distinct int
   EnumTypeId*   = distinct int
   EnumMemberId* = distinct int
 
   ScalarType* = object
     pattern*: string
-    hasPattern*: bool
-    hasDefault*: bool
-    hasMin*, hasMax*: bool # Can only be present for `stkI32` and `stkU32`.
-    required*: bool
-    deprecated*: bool
-    readOnly*: bool
+    flags*: set[ScalarTypeFlag]
     case kind*: ScalarTypeKind
     of stkJson: # Always `hasDefault`.
       discard
@@ -43,6 +47,10 @@ type
       structId*: StructTypeId
       circular*: bool
 
+when sizeOf(ScalarType) != 3 * sizeOf(int) + max(2 * sizeOf(int), 12):
+  {.warning: "ScalarType has incorrect size: " & $sizeOf(ScalarType).}
+
+type
   ContainerKind* = enum
     ckArray, ckDict
 
@@ -111,7 +119,7 @@ func prio(ty: Type): int =
     of stkBool, stkEnum:
       return 1
     of stkF32, stkI32, stkU32:
-      if ty.scalar.hasDefault: return 2
+      if stfHasDefault in ty.scalar.flags: return 2
     else: discard
   3
 

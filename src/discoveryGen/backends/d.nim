@@ -146,7 +146,7 @@ proc emitStruct(e; schema: DiscoveryJsonSchema) =
 ]#
 
 func needsNullable(ty: Type): bool =
-  not ty.scalar.hasDefault and ty.containers.len == 0
+  stfHasDefault not_in ty.scalar.flags and ty.containers.len == 0
 
 func formatMin(scalar: ScalarType): string =
   if scalar.kind == stkI32:
@@ -212,17 +212,17 @@ func initStructBodyContext(members: openArray[StructMember]): StructBodyContext 
 
 iterator memberUdas(c: StructBodyContext; memberId: int; m: Member): (UdaName, string) =
   let scalar = m.ty.scalar
-  if not scalar.required:
+  if stfRequired not_in scalar.flags:
     yield if m.ty.needsNullable: (udaEmbedNullable, "embedNullable") else: (udaOptional, "optional")
   if c.names[memberId] != m.name:
     yield (udaName, &"name({Quoted m.name})")
-  if scalar.readOnly:
+  if stfReadOnly in scalar.flags:
     yield (udaReadOnly, "readOnly")
-  if scalar.hasMin:
+  if stfHasMin in scalar.flags:
     yield (udaMinimum, &"minimum({scalar.formatMin})")
-  if scalar.hasMax:
+  if stfHasMax in scalar.flags:
     yield (udaMaximum, &"maximum({scalar.formatMax})")
-  if scalar.hasPattern:
+  if stfHasPattern in scalar.flags:
     yield (udaPattern, &"pattern({Quoted scalar.pattern})")
   block blk:
     yield case scalar.kind:
@@ -324,7 +324,7 @@ proc emitStructBody(e; api; body: StructBody) =
     e.emitMemberUdas ctx, memberId, m
     e.emitMemberType api, m.ty
     e.emit &" {ctx.names[memberId]}"
-    if m.ty.scalar.hasDefault and m.ty.containers.len == 0:
+    if stfHasDefault in m.ty.scalar.flags and m.ty.containers.len == 0:
       e.emitDefaultVal api, m.ty.scalar
     e.emit ";\p"
 

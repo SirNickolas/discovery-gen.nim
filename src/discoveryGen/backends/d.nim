@@ -15,10 +15,16 @@ import ../discovery
 from   ../private/kdlDecoding import KdlDoc, deserializeKdlDoc
 from   ../rawDiscovery import DiscoveryJsonSchema, DiscoveryRestDescription
 
-type
-  Settings = object
-    pathPattern, package: string
+type Settings = object
+  pathPattern, package, indentation: string
 
+template getKdlFieldNames(_: type Settings; field: string): seq[string] = @[
+  case field
+  of "pathPattern": "path"
+  else: field
+]
+
+type
   UdaName = enum
     udaBase64Encoded
     udaByName
@@ -45,12 +51,6 @@ using
   api: AnalyzedApi
   c: TargetConfig
   settings: ref Settings
-
-template getKdlFieldNames(_: type Settings; field: string): seq[string] = @[
-  case field
-  of "pathPattern": "path"
-  else: field
-]
 
 const
   camelCase = IdentStyle(wordInitial: lcUpper)
@@ -359,18 +359,17 @@ func prepareFiles(c; settings): seq[(string, GenFileSpec)] =
     (settings.pathPattern % c.rawApi.name).Path /
     settings.package.replace('.', '/').Path /
     c.rawApi.name.Path
-  const indent = "\t" # I cannot deny tabs are more compact.
   result.add ("types", GenFileSpec(
     path: string root / Path typesModule & ".d",
-    indent: indent,
+    indent: settings.indentation,
     codegen: c.initTypesCodegen settings,
   ))
 
-func deserializeSettings(doc: KdlDoc): Settings =
-  doc.deserializeKdlDoc result, strict = false
+proc deserializeSettings(settings: var Settings; doc: KdlDoc) {.tags: [].} =
+  doc.deserializeKdlDoc settings, strict = false
 
 func initDTarget*(c: TargetConfig; settings: sink KdlDoc): GenFilesetSpec =
-  let dSettings = new Settings
+  let dSettings = (ref Settings)(indentation: "\t") # I cannot deny tabs are more compact.
   {.cast(noSideEffect).}:
-    dSettings[] = settings.deserializeSettings
+    dSettings[].deserializeSettings settings
   c.prepareFiles(dSettings).toOverridableTable '#'

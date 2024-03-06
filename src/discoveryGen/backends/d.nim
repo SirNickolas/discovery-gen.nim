@@ -190,7 +190,7 @@ proc emitMemberUdas(e; c: var StructBodyContext; memberId: int; m: Member) =
         &"@({s}) "
     c.attrs.setLen 0
 
-proc emitMemberType(e; api; ty: Type) =
+proc emitMemberType(e; api; ty: Type; memberName: string) =
   if ty.needsNullable:
     e.emit "Nullable!"
   e.emit:
@@ -206,10 +206,14 @@ proc emitMemberType(e; api; ty: Type) =
     of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask: "string"
     of stkEnum: api.getEnum(ty.scalar.enumId).names[0].convertStyle(pascalCase)
     of stkStruct:
-      var s = api.getStruct(ty.scalar.structId).names[0].convertStyle(pascalCase)
-      if ty.scalar.circular:
-        s &= '*'
-      s
+      let structTy = api.getStruct ty.scalar.structId
+      if structTy.body.info.inferred:
+        memberName.convertStyle pascalCase
+      else:
+        var s = structTy.names[0].convertStyle pascalCase
+        if ty.scalar.circular:
+          s &= '*'
+        s
   for i in countDown(ty.containers.high, 0):
     e.emit:
       case ty.containers[i]
@@ -257,11 +261,17 @@ proc emitStructBody(e; api; body: StructBody) =
   for memberId, (m, descriptions) in body.members:
     e.emitAltDocs descriptions
     e.emitMemberUdas ctx, memberId, m
-    e.emitMemberType api, m.ty
+    e.emitMemberType api, m.ty, ctx.names[memberId]
     e.emit &" {ctx.names[memberId]}"
     if stfHasDefault in m.ty.scalar.flags and m.ty.containers.len == 0:
       e.emitDefaultVal api, m.ty.scalar
     e.emit ";\p"
+    if m.ty.scalar.kind == stkStruct:
+      let structTy = api.getStruct m.ty.scalar.structId
+      if structTy.body.info.inferred:
+        let localName = ctx.names[memberId].convertStyle pascalCase
+        let globalName = structTy.names[0].convertStyle pascalCase
+        e.emit &"alias {localName} = .{globalName}; /// ditto\p"
 
   e.dedent
 

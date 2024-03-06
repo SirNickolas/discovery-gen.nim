@@ -1,5 +1,6 @@
 from   std/algorithm import SortOrder, sort
 from   std/enumerate import enumerate
+from   std/sequtils import mapIt
 import std/sets
 import std/strformat
 from   std/strutils as su import nil
@@ -53,9 +54,6 @@ func raiseUnknownFormat(format, ty: string) {.noReturn, noInline.} =
 
 func raiseMissingField(field, ty: string) {.noReturn, noInline.} =
   raise MissingFieldError.newException &"Missing \"{field}\" for type \"{ty}\""
-
-proc analyzeAnonStructType(c; members: OrderedTable[string, DiscoveryJsonSchema]): StructTypeId
-  {.raises: [DiscoveryAnalysisError, ValueError], tags: [], noSideEffect.}
 
 func parseBooleanType(def: ?string): ScalarType =
   result = ScalarType(flags: {stfHasDefault}, kind: stkBool)
@@ -141,13 +139,13 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
     var members = newSeq[EnumMember] names.len
     let byName = collect initTable(names.len):
       for i, name in names:
-        members[i] = (name: name, descriptions: newSeqOfCap[string] 1)
+        members[i] = (name, @[])
         {name: i.EnumMemberId}
     c.api.enumTypes &= EnumType(members: members, memberDeprecations: deprecated)
     c.enumStats &= EnumStats(descriptions: newSeq[CountTable[string]] names.len, memberIds: byName)
 
   c.enumStats[result.int].names.inc c.curMemberName
-  for i, desc in descriptions:
+  for i, desc in descriptions: # May have fewer elements than we expect.
     if desc.len != 0:
       c.enumStats[result.int].descriptions[i].inc desc
 
@@ -157,15 +155,46 @@ proc analyzeEnumType(c; schema: DiscoveryJsonSchema): ScalarType =
   if def =? schema.default:
     result.defaultMember = c.enumStats[id.int].memberIds[def]
 
+proc registerAnonStructType(c; body: sink StructBody): StructTypeId =
+  body.members.sort do (a, b: StructMember) -> int:
+    cmp(a.m, b.m) # Total ordering in anonymous structs helps to deduplicate them more aggressively.
+
+  let nonExistent = c.api.structTypes.len.StructTypeId
+  result = c.anonRegistry.mgetOrPut(body.members.mapIt it.m, nonExistent)
+  let anonId = result.int - c.structRegistry.len
+  if result == nonExistent:
+    var descriptions = newSeq[CountTable[string]] body.members.len
+    for i, member in body.members.mpairs:
+      descriptions[i] = toCountTable move member.descriptions
+    body.info.inferred = true
+    c.anonStats &= AnonStats(descriptions: descriptions)
+    c.api.structTypes &= StructType(body: body)
+  else:
+    for i, t in c.anonStats[anonId].descriptions.mpairs:
+      if body.members[i].descriptions.len != 0:
+        t.inc body.members[i].descriptions[0]
+
+  c.anonStats[anonId].names.inc c.curMemberName
+
 proc analyzeRefType(c; name: string; checkSelfRef: bool): ScalarType =
   if name not_in c.jsonAliases:
-    result = ScalarType(flags: {stfHasDefault}, kind: stkStruct, structId: c.structRegistry[name])
-    # A simple check for self-referential types. This does not handle mutually recursive types!
-    if checkSelfRef and result.structId == c.curStructId:
-      result.circular = true
+    let id = c.structRegistry[name]
+    ScalarType(
+      flags: {stfHasDefault},
+      kind: stkStruct,
+      structId: id,
+      circular: checkSelfRef and id == c.curStructId,
+        # A simple check for self-referential types. This does not handle mutually recursive types!
+    )
   else:
-    result = ScalarType(flags: {stfHasDefault}, kind: stkJson)
     c.api.usesJsonType = true
+    ScalarType(flags: {stfHasDefault}, kind: stkJson)
+
+#[
+  Mutually recursive group.
+]#
+proc analyzeStructBodyAux(c; props: OrderedTable[string, DiscoveryJsonSchema]): StructBody
+  {.raises: [DiscoveryAnalysisError, ValueError], tags: [], noSideEffect.}
 
 proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
   var member = addr member
@@ -220,7 +249,7 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
           result.scalar = ScalarType(
             flags: {stfHasDefault},
             kind: stkStruct,
-            structId: c.analyzeAnonStructType member.properties,
+            structId: c.registerAnonStructType c.analyzeStructBodyAux member.properties,
           )
           break
         result.containers &= ckDict
@@ -249,20 +278,24 @@ proc analyzeMemberType(c; member: DiscoveryJsonSchema; info: var StructInfo):
     ty.scalar.flags.incl stfReadOnly
   (ty, member.description)
 
-proc analyzeAnonStructType(c; members: OrderedTable[string, DiscoveryJsonSchema]): StructTypeId =
-  raiseAssert "Not implemented" # TODO.
-
-proc analyzeStructBody(c; members: OrderedTable[string, DiscoveryJsonSchema]): StructBody =
+proc analyzeStructBodyAux(c; props: OrderedTable[string, DiscoveryJsonSchema]): StructBody =
   let prevMemberName = move c.curMemberName
-  newSeq result.members, members.len
-  for i, (name, member) in enumerate members.pairs:
+  newSeq result.members, props.len
+  for i, (name, member) in enumerate props.pairs:
     c.curMemberName = name
     let (ty, description) = c.analyzeMemberType(member, result.info)
-    result.members[i] = ((name, ty), if description.len != 0: @[description] else: @[])
-
-  result.members.sort do (a, b: StructMember) -> int:
-    cmp(a.m.ty, b.m.ty)
+    result.members[i] =
+      ((move c.curMemberName, ty), if description.len != 0: @[description] else: @[])
   c.curMemberName = prevMemberName
+#[
+  End of mutually recursive group.
+]#
+
+proc analyzeStructBody(c; props: OrderedTable[string, DiscoveryJsonSchema]): StructBody =
+  result = c.analyzeStructBodyAux props
+  result.members.sort do (a, b: StructMember) -> int:
+    # In a named struct, we reorder members as little as necessary for a better layout.
+    cmp(a.m.ty, b.m.ty)
 
 proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string] =
   tmp.setLen 0
@@ -281,14 +314,29 @@ proc finalizeEnumTypes(c) =
     for i, descriptions in c.enumStats[enumId].descriptions:
       e.members[i].descriptions = descriptions.sortKeysVia c.tmp
 
+proc finalizeAnonStructTypes(c) =
+  for anonId, stats in c.anonStats:
+    let structId = anonId + c.structRegistry.len
+    c.api.structTypes[structId].names = stats.names.sortKeysVia c.tmp
+    for i, member in c.api.structTypes[structId].body.members.mpairs:
+      member.descriptions = stats.descriptions[i].sortKeysVia c.tmp
+
 func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
   var c = Context(curStructId: StructTypeId -1)
   newSeq c.api.structTypes, raw.schemas.len
   c.structRegistry = collect initTable(raw.schemas.len):
     for i, name in enumerate raw.schemas.keys:
+      # TODO: Handle aliases to JSON type.
+      c.api.structTypes[i].names = @[name]
       {name: i.StructTypeId}
 
   c.api.params = c.analyzeStructBody raw.parameters
   c.api.params.info.inferred = true
+  for i, schema in enumerate raw.schemas.values:
+    c.curStructId = i.StructTypeId
+    c.api.structTypes[i].description = schema.description
+    c.api.structTypes[i].body = c.analyzeStructBody schema.properties
+
   c.finalizeEnumTypes
+  c.finalizeAnonStructTypes
   c.api

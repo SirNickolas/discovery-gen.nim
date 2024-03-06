@@ -1,3 +1,5 @@
+from std/math import isNaN
+
 type
   # https://developers.google.com/discovery/v1/type-format
   ScalarTypeKind* = enum
@@ -110,6 +112,32 @@ template getMember*(e: EnumType; id: EnumMemberId): EnumMember =
 
 func isDeprecated*(e: EnumType; id: EnumMemberId): bool =
   id.int < e.memberDeprecations.len and e.memberDeprecations[id.int]
+
+func `==`*(a, b: ScalarType): bool =
+  if (a.flags, a.kind, a.pattern) == (b.flags, b.kind, b.pattern):
+    result = case a.kind:
+      of stkJson:
+        true
+      of stkBool:
+        a.defaultBool == b.defaultBool
+      of stkF32:
+        if a.defaultF32.isNaN: b.defaultF32.isNaN else: a.defaultF32 == b.defaultF32
+      of stkF64:
+        if a.defaultF64.isNaN: b.defaultF64.isNaN else: a.defaultF64 == b.defaultF64
+      of stkI32:
+        (a.defaultI32, a.minI32, a.maxI32) == (b.defaultI32, b.minI32, b.maxI32)
+      of stkU32:
+        (a.defaultU32, a.minU32, a.maxU32) == (b.defaultU32, b.minU32, b.maxU32)
+      of stkI64:
+        a.defaultI64 == b.defaultI64
+      of stkU64:
+        a.defaultU64 == b.defaultU64
+      of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask:
+        a.defaultString == b.defaultString
+      of stkEnum:
+        (a.enumId, a.defaultMember) == (b.enumId, b.defaultMember)
+      of stkStruct:
+        (a.structId, a.circular) == (b.structId, b.circular)
 
 func prio(ty: Type): int =
   if ty.containers.len == 0:

@@ -68,12 +68,10 @@ type
     m: Member
     descriptions: seq[string]
 
-  StructInfo* = object
-    inferred*, hasRequiredMembers*, hasDeprecatedMembers*: bool
-
-  StructBody* = tuple
-    members: seq[StructMember]
-    info: StructInfo
+  StructBody* = object
+    members*: seq[StructMember]
+    inferred*: bool
+    allMemberFlags*, anyMemberFlags*: set[ScalarTypeFlag]
 
   StructType* = object
     names*: seq[string]

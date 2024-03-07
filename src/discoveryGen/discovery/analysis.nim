@@ -166,7 +166,7 @@ proc registerAnonStructType(c; body: sink StructBody): StructTypeId =
     var descriptions = newSeq[CountTable[string]] body.members.len
     for i, member in body.members.mpairs:
       descriptions[i] = toCountTable move member.descriptions
-    body.info.inferred = true
+    body.inferred = true
     c.anonStats &= AnonStats(descriptions: descriptions)
     c.api.structTypes &= StructType(body: body)
   else:
@@ -261,19 +261,14 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
     result.scalar.pattern = pattern
     result.scalar.flags.incl stfHasPattern
 
-proc analyzeMemberType(c; member: DiscoveryJsonSchema; info: var StructInfo):
-    tuple[ty: Type; description: string] =
+proc analyzeMemberType(c; member: DiscoveryJsonSchema): tuple[ty: Type; description: string] =
   var ty = c.analyzeTypeAux member
   if member.required:
     if ty.scalar.kind == stkStruct:
       raise DiscoveryAnalysisError.newException "Unsupported required parameter of type \"object\""
     ty.scalar.flags.incl stfRequired
-    info.hasRequiredMembers = true
-
   if member.deprecated:
     ty.scalar.flags.incl stfDeprecated
-    info.hasDeprecatedMembers = true
-
   if member.readOnly:
     ty.scalar.flags.incl stfReadOnly
   (ty, member.description)
@@ -281,9 +276,12 @@ proc analyzeMemberType(c; member: DiscoveryJsonSchema; info: var StructInfo):
 proc analyzeStructBodyAux(c; props: OrderedTable[string, DiscoveryJsonSchema]): StructBody =
   let prevMemberName = move c.curMemberName
   newSeq result.members, props.len
+  result.allMemberFlags = {ScalarTypeFlag.low .. ScalarTypeFlag.high}
   for i, (name, member) in enumerate props.pairs:
     c.curMemberName = name
-    let (ty, description) = c.analyzeMemberType(member, result.info)
+    let (ty, description) = c.analyzeMemberType member
+    result.allMemberFlags = result.allMemberFlags * ty.scalar.flags
+    result.anyMemberFlags = result.anyMemberFlags + ty.scalar.flags
     result.members[i] =
       ((move c.curMemberName, ty), if description.len != 0: @[description] else: @[])
   c.curMemberName = prevMemberName
@@ -331,7 +329,7 @@ func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
       {name: i.StructTypeId}
 
   c.api.params = c.analyzeStructBody raw.parameters
-  c.api.params.info.inferred = true
+  c.api.params.inferred = true
   for i, schema in enumerate raw.schemas.values:
     c.curStructId = i.StructTypeId
     c.api.structTypes[i].description = schema.description

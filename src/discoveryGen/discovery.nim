@@ -16,8 +16,8 @@ type
     stfDeprecated
     stfReadOnly
 
-  StructTypeId* = distinct int
-  EnumTypeId*   = distinct int
+  StructId*     = distinct int
+  EnumId*       = distinct int
   EnumMemberId* = distinct int
 
   ScalarType* = object
@@ -43,10 +43,10 @@ type
     of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask:
       defaultString*: string
     of stkEnum: # Always `hasDefault`.
-      enumId*: EnumTypeId
+      enumId*: EnumId
       defaultMember*: EnumMemberId
     of stkStruct: # Always `hasDefault and not required`.
-      structId*: StructTypeId
+      structId*: StructId
       circular*: bool
 
 when sizeOf(ScalarType) != 3 * sizeOf(int) + max(2 * sizeOf(int), 12):
@@ -60,12 +60,12 @@ type
     containers: seq[ContainerKind]
     scalar: ScalarType
 
-  Member* = tuple
+  BareStructMember* = tuple
     name: string
     ty: Type
 
   StructMember* = tuple
-    m: Member
+    m: BareStructMember
     descriptions: seq[string]
 
   StructBody* = object
@@ -73,7 +73,7 @@ type
     inferred*: bool
     allMemberFlags*, anyMemberFlags*: set[ScalarTypeFlag]
 
-  StructType* = object
+  StructDecl* = object
     names*: seq[string]
     description*: string
     body*: StructBody
@@ -82,7 +82,7 @@ type
     name: string
     descriptions: seq[string]
 
-  EnumType* = object
+  EnumDecl* = object
     names*: seq[string]
     members*: seq[EnumMember]
     memberDeprecations*: seq[bool] # Stored separately to save memory.
@@ -90,25 +90,25 @@ type
   AnalyzedApi* = object
     usesJsonType*: bool
     params*: StructBody
-    enumTypes*: seq[EnumType]
-    structTypes*: seq[StructType]
+    enumDecls*: seq[EnumDecl]
+    structDecls*: seq[StructDecl]
     # TODO: Methods.
     # TODO: Resources.
 
-func `==`*(a, b: StructTypeId): bool {.borrow.}
-func `==`*(a, b: EnumTypeId):   bool {.borrow.}
+func `==`*(a, b: StructId):     bool {.borrow.}
+func `==`*(a, b: EnumId):       bool {.borrow.}
 func `==`*(a, b: EnumMemberId): bool {.borrow.}
 
-template getStruct*(api: AnalyzedApi; id: StructTypeId): StructType =
-  api.structTypes[id.int]
+template getStruct*(api: AnalyzedApi; id: StructId): StructDecl =
+  api.structDecls[id.int]
 
-template getEnum*(api: AnalyzedApi; id: EnumTypeId): EnumType =
-  api.enumTypes[id.int]
+template getEnum*(api: AnalyzedApi; id: EnumId): EnumDecl =
+  api.enumDecls[id.int]
 
-template getMember*(e: EnumType; id: EnumMemberId): EnumMember =
+template getMember*(e: EnumDecl; id: EnumMemberId): EnumMember =
   e.members[id.int]
 
-func isDeprecated*(e: EnumType; id: EnumMemberId): bool =
+func isDeprecated*(e: EnumDecl; id: EnumMemberId): bool =
   id.int < e.memberDeprecations.len and e.memberDeprecations[id.int]
 
 func `==`*(a, b: ScalarType): bool =
@@ -152,7 +152,7 @@ func prio(ty: Type): int =
 func cmp*(a, b: Type): int =
   a.prio - b.prio
 
-func cmp*(a, b: Member): int =
+func cmp*(a, b: BareStructMember): int =
   result = a.ty.prio - b.ty.prio
   if result == 0:
     result = cmp(a.name, b.name)

@@ -24,12 +24,12 @@ type
 
   Context = object
     api: AnalyzedApi
-    curStructId: StructTypeId
+    curStructId: StructId
     curMemberName: string
     jsonAliases: HashSet[string]
-    enumRegistry: Table[(seq[string], seq[bool]), EnumTypeId]
-    structRegistry: Table[string, StructTypeId]
-    anonRegistry: Table[seq[Member], StructTypeId]
+    enumRegistry: Table[(seq[string], seq[bool]), EnumId]
+    structRegistry: Table[string, StructId]
+    anonRegistry: Table[seq[BareStructMember], StructId]
     enumStats: seq[EnumStats]
     anonStats: seq[AnonStats]
     tmp: seq[(int, string)]
@@ -126,14 +126,14 @@ func parseStringType(kind: ScalarTypeKind; def: ?string): ScalarType =
       of stkU64: result.defaultU64 = su.parseBiggestUInt def
       else:      result.defaultString = def
 
-proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]): EnumTypeId =
+proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]): EnumId =
   if names.len == 0:
     raise DiscoveryAnalysisError.newException "Enums with no members are not supported"
   if descriptions.len > names.len:
     raise DiscoveryAnalysisError.newException:
       &"Too many descriptions for enum {names}: {descriptions.len} > {names.len}"
 
-  let nonExistent = c.enumStats.len.EnumTypeId
+  let nonExistent = c.enumStats.len.EnumId
   result = c.enumRegistry.mgetOrPut((names, deprecated), nonExistent)
   if result == nonExistent:
     var members = newSeq[EnumMember] names.len
@@ -141,7 +141,7 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
       for i, name in names:
         members[i] = (name, @[])
         {name: i.EnumMemberId}
-    c.api.enumTypes &= EnumType(members: members, memberDeprecations: deprecated)
+    c.api.enumDecls &= EnumDecl(members: members, memberDeprecations: deprecated)
     c.enumStats &= EnumStats(descriptions: newSeq[CountTable[string]] names.len, memberIds: byName)
 
   c.enumStats[result.int].names.inc c.curMemberName
@@ -155,11 +155,11 @@ proc analyzeEnumType(c; schema: DiscoveryJsonSchema): ScalarType =
   if def =? schema.default:
     result.defaultMember = c.enumStats[id.int].memberIds[def]
 
-proc registerAnonStructType(c; body: sink StructBody): StructTypeId =
+proc registerAnonStructType(c; body: sink StructBody): StructId =
   body.members.sort do (a, b: StructMember) -> int:
     cmp(a.m, b.m) # Total ordering in anonymous structs helps to deduplicate them more aggressively.
 
-  let nonExistent = c.api.structTypes.len.StructTypeId
+  let nonExistent = c.api.structDecls.len.StructId
   result = c.anonRegistry.mgetOrPut(body.members.mapIt it.m, nonExistent)
   let anonId = result.int - c.structRegistry.len
   if result == nonExistent:
@@ -168,7 +168,7 @@ proc registerAnonStructType(c; body: sink StructBody): StructTypeId =
       descriptions[i] = toCountTable move member.descriptions
     body.inferred = true
     c.anonStats &= AnonStats(descriptions: descriptions)
-    c.api.structTypes &= StructType(body: body)
+    c.api.structDecls &= StructDecl(body: body)
   else:
     for i, t in c.anonStats[anonId].descriptions.mpairs:
       if body.members[i].descriptions.len != 0:
@@ -307,7 +307,7 @@ proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string
     result[i] = move k
 
 proc finalizeEnumTypes(c) =
-  for enumId, e in c.api.enumTypes.mpairs:
+  for enumId, e in c.api.enumDecls.mpairs:
     e.names = c.enumStats[enumId].names.sortKeysVia c.tmp
     for i, descriptions in c.enumStats[enumId].descriptions:
       e.members[i].descriptions = descriptions.sortKeysVia c.tmp
@@ -315,25 +315,25 @@ proc finalizeEnumTypes(c) =
 proc finalizeAnonStructTypes(c) =
   for anonId, stats in c.anonStats:
     let structId = anonId + c.structRegistry.len
-    c.api.structTypes[structId].names = stats.names.sortKeysVia c.tmp
-    for i, member in c.api.structTypes[structId].body.members.mpairs:
+    c.api.structDecls[structId].names = stats.names.sortKeysVia c.tmp
+    for i, member in c.api.structDecls[structId].body.members.mpairs:
       member.descriptions = stats.descriptions[i].sortKeysVia c.tmp
 
 func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
-  var c = Context(curStructId: StructTypeId -1)
-  newSeq c.api.structTypes, raw.schemas.len
+  var c = Context(curStructId: StructId -1)
+  newSeq c.api.structDecls, raw.schemas.len
   c.structRegistry = collect initTable(raw.schemas.len):
     for i, name in enumerate raw.schemas.keys:
       # TODO: Handle aliases to JSON type.
-      c.api.structTypes[i].names = @[name]
-      {name: i.StructTypeId}
+      c.api.structDecls[i].names = @[name]
+      {name: i.StructId}
 
   c.api.params = c.analyzeStructBody raw.parameters
   c.api.params.inferred = true
   for i, schema in enumerate raw.schemas.values:
-    c.curStructId = i.StructTypeId
-    c.api.structTypes[i].description = schema.description
-    c.api.structTypes[i].body = c.analyzeStructBody schema.properties
+    c.curStructId = i.StructId
+    c.api.structDecls[i].description = schema.description
+    c.api.structDecls[i].body = c.analyzeStructBody schema.properties
 
   c.finalizeEnumTypes
   c.finalizeAnonStructTypes

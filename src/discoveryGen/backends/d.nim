@@ -110,12 +110,12 @@ proc emitEnumMember(e; member: EnumMember; deprecated: bool) =
     e.emit "deprecated "
   e.emit &"{member.name},\p" # TODO: Convert to camel case.
 
-proc emitEnumType(e; eTy: EnumType) =
-  let baseTy = if eTy.members.len <= 256: "ubyte" else: "ushort"
-  e.emit &"///\penum {eTy.names[0].convertStyle pascalCase}: {baseTy} {{\p"
+proc emitEnumDecl(e; en: EnumDecl) =
+  let baseTy = if en.members.len <= 256: "ubyte" else: "ushort"
+  e.emit &"///\penum {en.names[0].convertStyle pascalCase}: {baseTy} {{\p"
   e.indent
-  for i, member in eTy.members:
-    e.emitEnumMember member, eTy.isDeprecated i.EnumMemberId
+  for i, member in en.members:
+    e.emitEnumMember member, en.isDeprecated i.EnumMemberId
   e.dedent
   e.emit "}\p"
 
@@ -141,7 +141,7 @@ func initStructBodyContext(members: openArray[StructMember]): StructBodyContext 
       of "readOnly":      udaReadOnly
       else: continue
 
-iterator memberUdas(c: StructBodyContext; memberId: int; m: Member): (UdaName, string) =
+iterator memberUdas(c: StructBodyContext; memberId: int; m: BareStructMember): (UdaName, string) =
   let scalar = m.ty.scalar
   if stfRequired not_in scalar.flags:
     yield if m.ty.needsNullable: (udaEmbedNullable, "embedNullable") else: (udaOptional, "optional")
@@ -165,7 +165,7 @@ iterator memberUdas(c: StructBodyContext; memberId: int; m: Member): (UdaName, s
       of stkEnum: (udaByName, "byName")
       else: break blk
 
-proc emitMemberUdas(e; c: var StructBodyContext; memberId: int; m: Member) =
+proc emitMemberUdas(e; c: var StructBodyContext; memberId: int; m: BareStructMember) =
   let scalar = m.ty.scalar
   var simpleSyntax = true
   for (uda, code) in c.memberUdas(memberId, m):
@@ -206,11 +206,11 @@ proc emitMemberType(e; api; ty: Type; memberName: string) =
     of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask: "string"
     of stkEnum: api.getEnum(ty.scalar.enumId).names[0].convertStyle(pascalCase)
     of stkStruct:
-      let structTy = api.getStruct ty.scalar.structId
-      if structTy.body.inferred:
+      let st = api.getStruct ty.scalar.structId
+      if st.body.inferred:
         memberName.convertStyle pascalCase
       else:
-        var s = structTy.names[0].convertStyle pascalCase
+        var s = st.names[0].convertStyle pascalCase
         if ty.scalar.circular:
           s &= '*'
         s
@@ -249,9 +249,9 @@ proc emitDefaultVal(e; api; scalar: ScalarType) =
   of stkEnum:
     if scalar.defaultMember.int != 0:
       let
-        eTy = api.getEnum scalar.enumId
-        eName = eTy.names[0].convertStyle pascalCase
-        eMemberName = eTy.getMember(scalar.defaultMember).name.convertStyle(camelCase)
+        en = api.getEnum scalar.enumId
+        eName = en.names[0].convertStyle pascalCase
+        eMemberName = en.getMember(scalar.defaultMember).name.convertStyle(camelCase)
       e.emit &" = {eName}.{eMemberName}"
   of stkJson, stkStruct: discard
 
@@ -267,18 +267,18 @@ proc emitStructBody(e; api; body: StructBody) =
       e.emitDefaultVal api, m.ty.scalar
     e.emit ";\p"
     if m.ty.scalar.kind == stkStruct:
-      let structTy = api.getStruct m.ty.scalar.structId
-      if structTy.body.inferred:
+      let st = api.getStruct m.ty.scalar.structId
+      if st.body.inferred:
         let localName = ctx.names[memberId].convertStyle pascalCase
-        let globalName = structTy.names[0].convertStyle pascalCase
+        let globalName = st.names[0].convertStyle pascalCase
         e.emit &"alias {localName} = .{globalName}; /// ditto\p"
 
   e.dedent
 
-proc emitStructType(e; api; structTy: StructType) =
-  e.emitDocComment structTy.description
-  e.emit &"struct {structTy.names[0].convertStyle pascalCase} {{\p"
-  e.emitStructBody api, structTy.body
+proc emitStructDecl(e; api; st: StructDecl) =
+  e.emitDocComment st.description
+  e.emit &"struct {st.names[0].convertStyle pascalCase} {{\p"
+  e.emitStructBody api, st.body
   e.emit "}\p"
 
 func initTypesCodegen(c; settings): Codegen =
@@ -307,8 +307,8 @@ func initTypesCodegen(c; settings): Codegen =
       e.endSection
 
     "enums":
-      for eTy in c.api.enumTypes:
-        e.emitEnumType eTy
+      for en in c.api.enumDecls:
+        e.emitEnumDecl en
         e.endSection
 
     "commonParameters":
@@ -328,8 +328,8 @@ func initTypesCodegen(c; settings): Codegen =
       e.endSection
 
     "structs":
-      for structTy in c.api.structTypes:
-        e.emitStructType c.api, structTy
+      for st in c.api.structDecls:
+        e.emitStructDecl c.api, st
         e.endSection
 
 #[

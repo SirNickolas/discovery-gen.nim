@@ -256,6 +256,12 @@ proc emitDefaultVal(e; api; scalar: ScalarType) =
       e.emit &" = {eName}.{eMemberName}"
   of stkJson, stkStruct: discard
 
+proc emitMemberTypeAlias(e; memberName: string; header: TypeDeclHeader) =
+  if header.hasInferredName:
+    let localName = memberName.convertStyle pascalCase
+    let globalName = header.names[0].convertStyle pascalCase
+    e.emit &"alias {localName} = .{globalName}; /// ditto\p"
+
 proc emitStructBody(e; api; body: StructBody) =
   var ctx = initStructBodyContext body.members
   e.indent
@@ -274,12 +280,12 @@ proc emitStructBody(e; api; body: StructBody) =
       e.emitDefaultVal api, m.ty.scalar
     e.emit ";\p"
 
-    if m.ty.scalar.kind == stkStruct:
-      let st = api.getStruct m.ty.scalar.structId
-      if st.header.hasInferredName:
-        let localName = memberName.convertStyle pascalCase
-        let globalName = st.header.names[0].convertStyle pascalCase
-        e.emit &"alias {localName} = .{globalName}; /// ditto\p"
+    case m.ty.scalar.kind:
+      of stkEnum:
+        e.emitMemberTypeAlias memberName, api.getEnum(m.ty.scalar.enumId).header
+      of stkStruct:
+        e.emitMemberTypeAlias memberName, api.getStruct(m.ty.scalar.structId).header
+      else: discard
 
   e.dedent
 

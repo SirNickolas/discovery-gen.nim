@@ -49,7 +49,7 @@ type
       structId*: StructId
       circular*: bool
 
-when sizeOf(ScalarType) != 3 * sizeOf(int) + max(2 * sizeOf(int), 12):
+when sizeOf(ScalarType) != 3 * sizeOf(int) + max(2 * sizeOf(int), 12) and not defined nimdoc:
   {.warning: "ScalarType has incorrect size: " & $sizeOf(ScalarType).}
 
 type
@@ -102,18 +102,6 @@ func `==`*(a, b: StructId):     bool {.borrow.}
 func `==`*(a, b: EnumId):       bool {.borrow.}
 func `==`*(a, b: EnumMemberId): bool {.borrow.}
 
-template getStruct*(api: AnalyzedApi; id: StructId): StructDecl =
-  api.structDecls[id.int]
-
-template getEnum*(api: AnalyzedApi; id: EnumId): EnumDecl =
-  api.enumDecls[id.int]
-
-template getMember*(e: EnumDecl; id: EnumMemberId): EnumMember =
-  e.members[id.int]
-
-func isDeprecated*(e: EnumDecl; id: EnumMemberId): bool =
-  id.int < e.memberDeprecations.len and e.memberDeprecations[id.int]
-
 func `==`*(a, b: ScalarType): bool =
   if (a.flags, a.kind, a.pattern) == (b.flags, b.kind, b.pattern):
     result = case a.kind:
@@ -159,3 +147,15 @@ func cmp*(a, b: BareStructMember): int =
   result = a.ty.prio - b.ty.prio
   if result == 0:
     result = cmp(a.name, b.name)
+
+template getStruct*(api: AnalyzedApi; id: StructId): StructDecl =
+  api.structDecls[id.int]
+
+template getEnum*(api: AnalyzedApi; id: EnumId): EnumDecl =
+  api.enumDecls[id.int]
+
+template getMember*(e: EnumDecl; id: EnumMemberId): EnumMember =
+  e.members[id.int]
+
+func isDeprecated*(e: EnumDecl; id: EnumMemberId): bool =
+  id.int < e.memberDeprecations.len and e.memberDeprecations[id.int]

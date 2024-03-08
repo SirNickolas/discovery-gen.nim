@@ -322,22 +322,26 @@ proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string
   for i, (_, k) in tmp.mpairs:
     result[i] = move k
 
-proc finalizeEnumDecls(c) =
-  for enumId, e in c.api.enumDecls.mpairs:
-    e.header.names = c.enumStats[enumId].names.sortKeysVia c.tmp
-    for i, descriptions in c.enumStats[enumId].descriptions:
-      e.members[i].descriptions = descriptions.sortKeysVia c.tmp
+proc finalizeTypeDeclHeader(c; header: var TypeDeclHeader; names: CountTable[string]) =
+  header.names = names.sortKeysVia c.tmp
+  if c.tmp.len == 1 or c.tmp[0][0] != c.tmp[1][0]: # If we have a clear leader.
+    header.hasCertainName = true
+
+proc finalizeMemberDescriptions(
+  c;
+  members: var openArray[EnumMember | StructMember];
+  descriptionsTables: openArray[CountTable[string]];
+) =
+  for i, descriptions in descriptionsTables:
+    members[i].descriptions = descriptions.sortKeysVia c.tmp
+
+proc finalizeEnumDecl(c; en: var EnumDecl; stats: EnumStats) =
+  c.finalizeTypeDeclHeader en.header, stats.names
+  c.finalizeMemberDescriptions en.members, stats.descriptions
 
 proc finalizeAnonStructDecl(c; st: var StructDecl; stats: AnonStats) =
-  st.header.names = stats.names.sortKeysVia c.tmp
-  if c.tmp.len == 1 or c.tmp[0][0] != c.tmp[1][0]:
-    st.header.hasCertainName = true
-  for i, member in st.body.members.mpairs:
-    member.descriptions = stats.descriptions[i].sortKeysVia c.tmp
-
-proc finalizeAnonStructDecls(c) =
-  for anonId, stats in c.anonStats:
-    c.finalizeAnonStructDecl c.api.structDecls[anonId + c.structRegistry.len], stats
+  c.finalizeTypeDeclHeader st.header, stats.names
+  c.finalizeMemberDescriptions st.body.members, stats.descriptions
 
 func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
   var c = Context(curStructId: StructId -1)
@@ -354,6 +358,8 @@ func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
     c.api.structDecls[i].description = schema.description
     c.api.structDecls[i].body = c.analyzeStructBody schema.properties
 
-  c.finalizeEnumDecls
-  c.finalizeAnonStructDecls
+  for enumId, stats in c.enumStats:
+    c.finalizeEnumDecl c.api.enumDecls[enumId], stats
+  for anonId, stats in c.anonStats:
+    c.finalizeAnonStructDecl c.api.structDecls[anonId + c.structRegistry.len], stats
   c.api

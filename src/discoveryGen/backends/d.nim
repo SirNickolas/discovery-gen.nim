@@ -13,6 +13,7 @@ from   sourcegens/utils import dd
 import ../backends
 import ../discovery
 from   ../private/kdlDecoding import KdlDeserializationError, KdlDoc, deserializeKdlDoc
+from   ../private/plurals import singularize
 from   ../rawDiscovery import DiscoveryJsonSchema, DiscoveryRestDescription
 
 type Settings = object
@@ -259,17 +260,24 @@ proc emitStructBody(e; api; body: StructBody) =
   var ctx = initStructBodyContext body.members
   e.indent
   for memberId, (m, descriptions) in body.members:
+    let memberName =
+      if m.ty.containers.len == 0:
+        ctx.names[memberId]
+      else:
+        ctx.names[memberId].singularize
+
     e.emitAltDocs descriptions
     e.emitMemberUdas ctx, memberId, m
-    e.emitMemberType api, m.ty, ctx.names[memberId]
+    e.emitMemberType api, m.ty, memberName
     e.emit &" {ctx.names[memberId]}"
     if stfHasDefault in m.ty.scalar.flags and m.ty.containers.len == 0:
       e.emitDefaultVal api, m.ty.scalar
     e.emit ";\p"
+
     if m.ty.scalar.kind == stkStruct:
       let st = api.getStruct m.ty.scalar.structId
       if st.hasInferredName:
-        let localName = ctx.names[memberId].convertStyle pascalCase
+        let localName = memberName.convertStyle pascalCase
         let globalName = st.names[0].convertStyle pascalCase
         e.emit &"alias {localName} = .{globalName}; /// ditto\p"
 

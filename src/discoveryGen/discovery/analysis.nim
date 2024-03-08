@@ -8,6 +8,7 @@ from   std/sugar import collect
 import std/tables
 import questionable
 import ../discovery
+from   ../private/plurals import singularize
 from   ../rawDiscovery import DiscoveryJsonSchema, DiscoveryRestDescription
 
 export discovery
@@ -26,6 +27,7 @@ type
     api: AnalyzedApi
     curStructId: StructId
     curMemberName: string
+    curMemberMultiple: bool
     jsonAliases: HashSet[string]
     enumRegistry: Table[(seq[string], seq[bool]), EnumId]
     structRegistry: Table[string, StructId]
@@ -126,6 +128,12 @@ func parseStringType(kind: ScalarTypeKind; def: ?string): ScalarType =
       of stkU64: result.defaultU64 = su.parseBiggestUInt def
       else:      result.defaultString = def
 
+func inferCurTypeName(c): string =
+  if not c.curMemberMultiple:
+    c.curMemberName
+  else:
+    c.curMemberName.singularize
+
 proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]): EnumId =
   if names.len == 0:
     raise DiscoveryAnalysisError.newException "Enums with no members are not supported"
@@ -144,7 +152,7 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
     c.api.enumDecls &= EnumDecl(members: members, memberDeprecations: deprecated)
     c.enumStats &= EnumStats(descriptions: newSeq[CountTable[string]] names.len, memberIds: byName)
 
-  c.enumStats[result.int].names.inc c.curMemberName
+  c.enumStats[result.int].names.inc c.inferCurTypeName
   for i, desc in descriptions: # May have fewer elements than we expect.
     if desc.len != 0:
       c.enumStats[result.int].descriptions[i].inc desc
@@ -173,7 +181,7 @@ proc registerAnonStructType(c; body: sink StructBody): StructId =
       if body.members[i].descriptions.len != 0:
         t.inc body.members[i].descriptions[0]
 
-  c.anonStats[anonId].names.inc c.curMemberName
+  c.anonStats[anonId].names.inc c.inferCurTypeName
 
 proc analyzeRefType(c; name: string; checkSelfRef: bool): ScalarType =
   if name not_in c.jsonAliases:
@@ -196,10 +204,12 @@ proc analyzeStructBodyAux(c; props: OrderedTable[string, DiscoveryJsonSchema]): 
   {.raises: [DiscoveryAnalysisError, ValueError], tags: [], noSideEffect.}
 
 proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
+  let prevMultiple = c.curMemberMultiple
   var member = addr member
   while true:
     if member.repeated:
       result.containers &= ckArray
+      c.curMemberMultiple = true
 
     if refName =? member.`$ref`:
       if def =? member.default:
@@ -240,6 +250,7 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
         without itemSchema =? member.items:
           raiseMissingField "items", ty = "array"
         result.containers &= ckArray
+        c.curMemberMultiple = true
         member = addr itemSchema[]
       of "object":
         if def =? member.default:
@@ -252,10 +263,12 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
           )
           break
         result.containers &= ckDict
+        c.curMemberMultiple = true
         member = addr itemSchema[]
       else:
         raise DiscoveryAnalysisError.newException &"Unknown type {Quoted member.`type`}"
 
+  c.curMemberMultiple = prevMultiple
   if pattern =? member.pattern:
     result.scalar.pattern = pattern
     result.scalar.flags.incl stfHasPattern

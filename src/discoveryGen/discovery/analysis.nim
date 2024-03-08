@@ -149,7 +149,11 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
       for i, name in names:
         members[i] = (name, @[])
         {name: i.EnumMemberId}
-    c.api.enumDecls &= EnumDecl(members: members, memberDeprecations: deprecated)
+    c.api.enumDecls &= EnumDecl(
+      header: TypeDeclHeader(hasInferredName: true),
+      members: members,
+      memberDeprecations: deprecated,
+    )
     c.enumStats &= EnumStats(descriptions: newSeq[CountTable[string]] names.len, memberIds: byName)
 
   c.enumStats[result.int].names.inc c.inferCurTypeName
@@ -175,7 +179,7 @@ proc registerAnonStructType(c; body: sink StructBody): StructId =
     for i, member in body.members.mpairs:
       descriptions[i] = toCountTable move member.descriptions
     c.anonStats &= AnonStats(descriptions: descriptions)
-    c.api.structDecls &= StructDecl(body: body, hasInferredName: true)
+    c.api.structDecls &= StructDecl(header: TypeDeclHeader(hasInferredName: true), body: body)
   else:
     for i, t in c.anonStats[anonId].descriptions.mpairs:
       if body.members[i].descriptions.len != 0:
@@ -320,14 +324,14 @@ proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string
 
 proc finalizeEnumDecls(c) =
   for enumId, e in c.api.enumDecls.mpairs:
-    e.names = c.enumStats[enumId].names.sortKeysVia c.tmp
+    e.header.names = c.enumStats[enumId].names.sortKeysVia c.tmp
     for i, descriptions in c.enumStats[enumId].descriptions:
       e.members[i].descriptions = descriptions.sortKeysVia c.tmp
 
 proc finalizeAnonStructDecl(c; st: var StructDecl; stats: AnonStats) =
-  st.names = stats.names.sortKeysVia c.tmp
-  if st.names.len == 1 or c.tmp[0][0] != c.tmp[1][0]:
-    st.hasCertainName = true
+  st.header.names = stats.names.sortKeysVia c.tmp
+  if c.tmp.len == 1 or c.tmp[0][0] != c.tmp[1][0]:
+    st.header.hasCertainName = true
   for i, member in st.body.members.mpairs:
     member.descriptions = stats.descriptions[i].sortKeysVia c.tmp
 
@@ -341,8 +345,7 @@ func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
   c.structRegistry = collect initTable(raw.schemas.len):
     for i, name in enumerate raw.schemas.keys:
       # TODO: Handle aliases to JSON type.
-      c.api.structDecls[i].names = @[name]
-      c.api.structDecls[i].hasCertainName = true
+      c.api.structDecls[i].header = TypeDeclHeader(names: @[name], hasCertainName: true)
       {name: i.StructId}
 
   c.api.params = c.analyzeStructBody raw.parameters

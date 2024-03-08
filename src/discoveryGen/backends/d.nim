@@ -113,7 +113,7 @@ proc emitEnumMember(e; member: EnumMember; deprecated: bool) =
 
 proc emitEnumDecl(e; en: EnumDecl) =
   let baseTy = if en.members.len <= 256: "ubyte" else: "ushort"
-  e.emit &"///\penum {en.names[0].convertStyle pascalCase}: {baseTy} {{\p"
+  e.emit &"///\penum {en.header.names[0].convertStyle pascalCase}: {baseTy} {{\p"
   e.indent
   for i, member in en.members:
     e.emitEnumMember member, en.isDeprecated i.EnumMemberId
@@ -205,13 +205,13 @@ proc emitMemberType(e; api; ty: Type; memberName: string) =
     of stkI64: "long"
     of stkU64: "ulong"
     of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask: "string"
-    of stkEnum: api.getEnum(ty.scalar.enumId).names[0].convertStyle(pascalCase)
+    of stkEnum: api.getEnum(ty.scalar.enumId).header.names[0].convertStyle(pascalCase)
     of stkStruct:
       let st = api.getStruct ty.scalar.structId
-      if st.hasInferredName:
+      if st.header.hasInferredName:
         memberName.convertStyle pascalCase
       else:
-        var s = st.names[0].convertStyle pascalCase
+        var s = st.header.names[0].convertStyle pascalCase
         if ty.scalar.circular:
           s &= '*'
         s
@@ -251,7 +251,7 @@ proc emitDefaultVal(e; api; scalar: ScalarType) =
     if scalar.defaultMember.int != 0:
       let
         en = api.getEnum scalar.enumId
-        eName = en.names[0].convertStyle pascalCase
+        eName = en.header.names[0].convertStyle pascalCase
         eMemberName = en.getMember(scalar.defaultMember).name.convertStyle(camelCase)
       e.emit &" = {eName}.{eMemberName}"
   of stkJson, stkStruct: discard
@@ -276,16 +276,16 @@ proc emitStructBody(e; api; body: StructBody) =
 
     if m.ty.scalar.kind == stkStruct:
       let st = api.getStruct m.ty.scalar.structId
-      if st.hasInferredName:
+      if st.header.hasInferredName:
         let localName = memberName.convertStyle pascalCase
-        let globalName = st.names[0].convertStyle pascalCase
+        let globalName = st.header.names[0].convertStyle pascalCase
         e.emit &"alias {localName} = .{globalName}; /// ditto\p"
 
   e.dedent
 
 proc emitStructDecl(e; api; st: StructDecl) =
   e.emitDocComment st.description
-  e.emit &"struct {st.names[0].convertStyle pascalCase} {{\p"
+  e.emit &"struct {st.header.names[0].convertStyle pascalCase} {{\p"
   e.emitStructBody api, st.body
   e.emit "}\p"
 

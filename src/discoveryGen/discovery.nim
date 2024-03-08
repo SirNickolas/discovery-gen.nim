@@ -72,18 +72,21 @@ type
     members*: seq[StructMember]
     allMemberFlags*, anyMemberFlags*: set[ScalarTypeFlag]
 
-  StructDecl* = object
+  TypeDeclHeader* = object
     names*: seq[string]
+    hasInferredName*, hasCertainName*: bool
+
+  StructDecl* = object
+    header*: TypeDeclHeader
     description*: string
     body*: StructBody
-    hasInferredName*, hasCertainName*: bool
 
   EnumMember* = tuple
     name: string
     descriptions: seq[string]
 
   EnumDecl* = object
-    names*: seq[string]
+    header*: TypeDeclHeader
     members*: seq[EnumMember]
     memberDeprecations*: seq[bool] # Stored separately to save memory.
 

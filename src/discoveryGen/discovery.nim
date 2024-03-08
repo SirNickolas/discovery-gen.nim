@@ -56,17 +56,17 @@ type
   ContainerKind* = enum
     ckArray, ckDict
 
-  Type* = tuple
-    containers: seq[ContainerKind]
-    scalar: ScalarType
+  Type* = object
+    containers*: seq[ContainerKind]
+    scalar*: ScalarType
 
   BareStructMember* = tuple
     name: string
     ty: Type
 
-  StructMember* = tuple
-    m: BareStructMember
-    descriptions: seq[string]
+  StructMember* = object
+    bare*: BareStructMember
+    descriptions*: seq[string]
 
   StructBody* = object
     members*: seq[StructMember]
@@ -81,9 +81,9 @@ type
     description*: string
     body*: StructBody
 
-  EnumMember* = tuple
-    name: string
-    descriptions: seq[string]
+  EnumMember* = object
+    name*: string
+    descriptions*: seq[string]
 
   EnumDecl* = object
     header*: TypeDeclHeader

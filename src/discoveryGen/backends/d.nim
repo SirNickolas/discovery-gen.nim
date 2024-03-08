@@ -123,8 +123,8 @@ proc emitEnumDecl(e; en: EnumDecl) =
 func initStructBodyContext(members: openArray[StructMember]): StructBodyContext =
   result.attrs = newSeqOfCap[string] 5
   newSeq result.names, members.len
-  for i, (m, _) in members:
-    result.names[i] = m.name.convertStyle camelCase
+  for i, m in members:
+    result.names[i] = m.bare.name.convertStyle camelCase
     result.forbidden.incl:
       case result.names[i]
       of "base64Encoded": udaBase64Encoded
@@ -265,26 +265,26 @@ proc emitMemberTypeAlias(e; memberName: string; header: TypeDeclHeader) =
 proc emitStructBody(e; api; body: StructBody) =
   var ctx = initStructBodyContext body.members
   e.indent
-  for memberId, (m, descriptions) in body.members:
+  for memberId, m in body.members:
     let memberName =
-      if m.ty.containers.len == 0:
+      if m.bare.ty.containers.len == 0:
         ctx.names[memberId]
       else:
         ctx.names[memberId].singularize
 
-    e.emitAltDocs descriptions
-    e.emitMemberUdas ctx, memberId, m
-    e.emitMemberType api, m.ty, memberName
+    e.emitAltDocs m.descriptions
+    e.emitMemberUdas ctx, memberId, m.bare
+    e.emitMemberType api, m.bare.ty, memberName
     e.emit &" {ctx.names[memberId]}"
-    if stfHasDefault in m.ty.scalar.flags and m.ty.containers.len == 0:
-      e.emitDefaultVal api, m.ty.scalar
+    if stfHasDefault in m.bare.ty.scalar.flags and m.bare.ty.containers.len == 0:
+      e.emitDefaultVal api, m.bare.ty.scalar
     e.emit ";\p"
 
-    case m.ty.scalar.kind:
+    case m.bare.ty.scalar.kind:
       of stkEnum:
-        e.emitMemberTypeAlias memberName, api.getEnum(m.ty.scalar.enumId).header
+        e.emitMemberTypeAlias memberName, api.getEnum(m.bare.ty.scalar.enumId).header
       of stkStruct:
-        e.emitMemberTypeAlias memberName, api.getStruct(m.ty.scalar.structId).header
+        e.emitMemberTypeAlias memberName, api.getStruct(m.bare.ty.scalar.structId).header
       else: discard
 
   e.dedent

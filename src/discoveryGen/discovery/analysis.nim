@@ -147,7 +147,7 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
     var members = newSeq[EnumMember] names.len
     let byName = collect initTable(names.len):
       for i, name in names:
-        members[i] = (name, @[])
+        members[i].name = name
         {name: i.EnumMemberId}
     c.api.enumDecls &= EnumDecl(
       header: TypeDeclHeader(hasInferredName: true),
@@ -169,10 +169,11 @@ proc analyzeEnumType(c; schema: DiscoveryJsonSchema): ScalarType =
 
 proc registerAnonStructType(c; body: sink StructBody): StructId =
   body.members.sort do (a, b: StructMember) -> int:
-    cmp(a.m, b.m) # Total ordering in anonymous structs helps to deduplicate them more aggressively.
+    # Total ordering in anonymous structs helps to deduplicate them more aggressively.
+    cmp(a.bare, b.bare)
 
   let nonExistent = c.api.structDecls.len.StructId
-  result = c.anonRegistry.mgetOrPut(body.members.mapIt it.m, nonExistent)
+  result = c.anonRegistry.mgetOrPut(body.members.mapIt it.bare, nonExistent)
   let anonId = result.int - c.structRegistry.len
   if result == nonExistent:
     var descriptions = newSeq[CountTable[string]] body.members.len
@@ -298,8 +299,10 @@ proc analyzeStructBodyAux(c; props: OrderedTable[string, DiscoveryJsonSchema]): 
     let (ty, description) = c.analyzeMemberType member
     result.allMemberFlags = result.allMemberFlags * ty.scalar.flags
     result.anyMemberFlags = result.anyMemberFlags + ty.scalar.flags
-    result.members[i] =
-      ((move c.curMemberName, ty), if description.len != 0: @[description] else: @[])
+    result.members[i] = StructMember(
+      bare: (move c.curMemberName, ty),
+      descriptions: if description.len != 0: @[description] else: @[],
+    )
   c.curMemberName = prevMemberName
 #[
   End of mutually recursive group.
@@ -309,7 +312,7 @@ proc analyzeStructBody(c; props: OrderedTable[string, DiscoveryJsonSchema]): Str
   result = c.analyzeStructBodyAux props
   result.members.sort do (a, b: StructMember) -> int:
     # In a named struct, we reorder members as little as necessary for a better layout.
-    cmp(a.m.ty, b.m.ty)
+    cmp(a.bare.ty, b.bare.ty)
 
 proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string] =
   tmp.setLen 0

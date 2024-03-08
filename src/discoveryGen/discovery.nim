@@ -70,13 +70,13 @@ type
 
   StructBody* = object
     members*: seq[StructMember]
-    inferred*: bool
     allMemberFlags*, anyMemberFlags*: set[ScalarTypeFlag]
 
   StructDecl* = object
     names*: seq[string]
     description*: string
     body*: StructBody
+    hasInferredName*, hasCertainName*: bool
 
   EnumMember* = tuple
     name: string

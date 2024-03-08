@@ -166,9 +166,8 @@ proc registerAnonStructType(c; body: sink StructBody): StructId =
     var descriptions = newSeq[CountTable[string]] body.members.len
     for i, member in body.members.mpairs:
       descriptions[i] = toCountTable move member.descriptions
-    body.inferred = true
     c.anonStats &= AnonStats(descriptions: descriptions)
-    c.api.structDecls &= StructDecl(body: body)
+    c.api.structDecls &= StructDecl(body: body, hasInferredName: true)
   else:
     for i, t in c.anonStats[anonId].descriptions.mpairs:
       if body.members[i].descriptions.len != 0:
@@ -306,18 +305,22 @@ proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string
   for i, (_, k) in tmp.mpairs:
     result[i] = move k
 
-proc finalizeEnumTypes(c) =
+proc finalizeEnumDecls(c) =
   for enumId, e in c.api.enumDecls.mpairs:
     e.names = c.enumStats[enumId].names.sortKeysVia c.tmp
     for i, descriptions in c.enumStats[enumId].descriptions:
       e.members[i].descriptions = descriptions.sortKeysVia c.tmp
 
-proc finalizeAnonStructTypes(c) =
+proc finalizeAnonStructDecl(c; st: var StructDecl; stats: AnonStats) =
+  st.names = stats.names.sortKeysVia c.tmp
+  if st.names.len == 1 or c.tmp[0][0] != c.tmp[1][0]:
+    st.hasCertainName = true
+  for i, member in st.body.members.mpairs:
+    member.descriptions = stats.descriptions[i].sortKeysVia c.tmp
+
+proc finalizeAnonStructDecls(c) =
   for anonId, stats in c.anonStats:
-    let structId = anonId + c.structRegistry.len
-    c.api.structDecls[structId].names = stats.names.sortKeysVia c.tmp
-    for i, member in c.api.structDecls[structId].body.members.mpairs:
-      member.descriptions = stats.descriptions[i].sortKeysVia c.tmp
+    c.finalizeAnonStructDecl c.api.structDecls[anonId + c.structRegistry.len], stats
 
 func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
   var c = Context(curStructId: StructId -1)
@@ -326,15 +329,15 @@ func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
     for i, name in enumerate raw.schemas.keys:
       # TODO: Handle aliases to JSON type.
       c.api.structDecls[i].names = @[name]
+      c.api.structDecls[i].hasCertainName = true
       {name: i.StructId}
 
   c.api.params = c.analyzeStructBody raw.parameters
-  c.api.params.inferred = true
   for i, schema in enumerate raw.schemas.values:
     c.curStructId = i.StructId
     c.api.structDecls[i].description = schema.description
     c.api.structDecls[i].body = c.analyzeStructBody schema.properties
 
-  c.finalizeEnumTypes
-  c.finalizeAnonStructTypes
+  c.finalizeEnumDecls
+  c.finalizeAnonStructDecls
   c.api

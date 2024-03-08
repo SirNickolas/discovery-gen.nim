@@ -207,7 +207,7 @@ proc emitMemberType(e; api; ty: Type; memberName: string) =
     of stkEnum: api.getEnum(ty.scalar.enumId).names[0].convertStyle(pascalCase)
     of stkStruct:
       let st = api.getStruct ty.scalar.structId
-      if st.body.inferred:
+      if st.hasInferredName:
         memberName.convertStyle pascalCase
       else:
         var s = st.names[0].convertStyle pascalCase
@@ -268,7 +268,7 @@ proc emitStructBody(e; api; body: StructBody) =
     e.emit ";\p"
     if m.ty.scalar.kind == stkStruct:
       let st = api.getStruct m.ty.scalar.structId
-      if st.body.inferred:
+      if st.hasInferredName:
         let localName = ctx.names[memberId].convertStyle pascalCase
         let globalName = st.names[0].convertStyle pascalCase
         e.emit &"alias {localName} = .{globalName}; /// ditto\p"

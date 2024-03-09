@@ -64,12 +64,14 @@ type
     name: string
     ty: Type
 
+  BareEnumMember* = tuple[name: string]
+
   AggregateMember*[B] = object
     bare*: B
     descriptions*: seq[string]
 
+  EnumMember*   = AggregateMember[BareEnumMember]
   StructMember* = AggregateMember[BareStructMember]
-  EnumMember*   = AggregateMember[string]
 
   TypeDeclHeader* = object
     names*: seq[string]

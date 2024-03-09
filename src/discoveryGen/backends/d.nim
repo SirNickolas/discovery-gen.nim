@@ -79,11 +79,11 @@ method renameEnum*(policy; name: string): string =
 method renameStruct*(policy; name: string): string =
   name.convertStyle pascalCase
 
-method renameEnumMember*(policy; name: string): string =
-  name.convertStyle camelCase
+method renameMember*(policy; member: BareEnumMember): string =
+  member.name.convertStyle camelCase
 
-method renameStructMember*(policy; name: string): string =
-  name.convertStyle camelCase
+method renameMember*(policy; member: BareStructMember): string =
+  member.name.convertStyle camelCase
 
 method renameModule*(policy; name: string): string =
   name.convertStyle snakeCase
@@ -152,12 +152,12 @@ proc emitAltDocs(e; docs: openArray[string]) =
     e.emit "///\p"
 
 proc emitEnumMember(e; id: int; member: EnumMember; info: TypeDeclNameInfo; deprecated: bool) =
-  let name = info.body.memberNames[id]
-  let haveAlias = not info.body.hadInvalidMembers and name != member.bare
+  let name = info.body.members[id].name
+  let haveAlias = not info.body.hadInvalidMembers and name != member.bare.name
   if haveAlias:
     if deprecated:
       e.emit "deprecated "
-    e.emit &"{member.bare},\p" # Undocumented, but will be serialized as this name.
+    e.emit &"{member.bare.name},\p" # Undocumented, but will be serialized as this name.
 
   e.emitAltDocs member.descriptions
   if deprecated:
@@ -169,18 +169,18 @@ proc emitEnumMember(e; id: int; member: EnumMember; info: TypeDeclNameInfo; depr
 
 proc emitEnumDecl(e; en: EnumDecl; info: TypeDeclNameInfo) =
   let baseTy = if en.members.len <= 256: "ubyte" else: "ushort"
-  e.emit &"///\penum {info.name}: {baseTy} {{\p"
+  e.emit &"///\penum {info.header.name}: {baseTy} {{\p"
   e.indent
   for i, member in en.members:
     e.emitEnumMember i, member, info, en.isDeprecated i.EnumMemberId
   e.dedent
   e.emit "}\p"
 
-func initStructBodyContext(memberNames: openArray[string]): StructBodyContext =
+func initStructBodyContext(members: openArray[StructMemberNameInfo]): StructBodyContext =
   result.attrs = newSeqOfCap[string] 5
-  for name in memberNames:
+  for m in members:
     result.forbidden.incl:
-      case name
+      case m.name
       of "base64Encoded": udaBase64Encoded
       of "byName":        udaByName
       of "date":          udaDate
@@ -225,7 +225,7 @@ proc emitMemberUdas(
 ) =
   let scalar = m.ty.scalar
   var simpleSyntax = true
-  for (uda, code) in m.memberUdas info.memberNames[memberId]:
+  for (uda, code) in m.memberUdas info.members[memberId].name:
     c.attrs.add:
       if uda not_in c.forbidden:
         code
@@ -261,9 +261,9 @@ proc emitMemberType(e; names: NameAssignment; ty: Type) =
     of stkI64: "long"
     of stkU64: "ulong"
     of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask: "string"
-    of stkEnum: names.getEnumInfo(ty.scalar.enumId).name
+    of stkEnum: names.getEnumInfo(ty.scalar.enumId).header.name
     of stkStruct:
-      let s = names.getStructInfo(ty.scalar.structId).name
+      let s = names.getStructInfo(ty.scalar.structId).header.name
       if not ty.scalar.circular: s else: s & '*'
   for i in countDown(ty.containers.high, 0):
     e.emit:
@@ -301,8 +301,8 @@ proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType) =
     if scalar.defaultMember.int != 0:
       let
         info = names.getEnumInfo scalar.enumId
-        eName = info.name
-        eMemberName = info.body.memberNames[scalar.defaultMember.int]
+        eName = info.header.name
+        eMemberName = info.body.members[scalar.defaultMember.int].name
       e.emit &" = {eName}.{eMemberName}"
   of stkJson, stkStruct: discard
 
@@ -313,10 +313,10 @@ proc emitMemberTypeAlias(e; ty: Type; memberName, globalName: string) =
   e.emit &"alias {localName} = .{globalName}; /// ditto\p"
 
 proc emitStructBody(e; api; names: NameAssignment; body: StructBody; info: TypeDeclBodyNameInfo) =
-  var ctx = initStructBodyContext info.memberNames
+  var ctx = initStructBodyContext info.members
   e.indent
   for memberId, m in body.members:
-    let memberName = info.memberNames[memberId]
+    let memberName = info.members[memberId].name
     e.emitAltDocs m.descriptions
     e.emitMemberUdas ctx, memberId, m.bare, info
     e.emitMemberType names, m.bare.ty
@@ -327,18 +327,19 @@ proc emitStructBody(e; api; names: NameAssignment; body: StructBody; info: TypeD
 
     case m.bare.ty.scalar.kind:
       of stkEnum:
-        e.emitMemberTypeAlias m.bare.ty, memberName, names.getEnumInfo(m.bare.ty.scalar.enumId).name
+        let id = m.bare.ty.scalar.enumId
+        e.emitMemberTypeAlias m.bare.ty, memberName, names.getEnumInfo(id).header.name
       of stkStruct:
         let id = m.bare.ty.scalar.structId
         if api.getStruct(id).header.hasInferredName:
-          e.emitMemberTypeAlias m.bare.ty, memberName, names.getStructInfo(id).name
+          e.emitMemberTypeAlias m.bare.ty, memberName, names.getStructInfo(id).header.name
       else: discard
 
   e.dedent
 
 proc emitStructDecl(e; api; names: NameAssignment; st: StructDecl; info: TypeDeclNameInfo) =
   e.emitDocComment st.description
-  e.emit &"struct {info.name} {{\p"
+  e.emit &"struct {info.header.name} {{\p"
   e.emitStructBody api, names, st.body, info.body
   e.emit "}\p"
 

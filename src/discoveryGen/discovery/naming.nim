@@ -1,4 +1,4 @@
-from ../discovery import EnumId, StructId
+from ../discovery import BareEnumMember, BareStructMember, EnumId, StructId
 
 type NamingPolicy* = object of RootObj
 
@@ -12,11 +12,11 @@ method renameEnum*(policy; name: string): string =
 method renameStruct*(policy; name: string): string =
   name
 
-method renameEnumMember*(policy; name: string): string =
-  name
+method renameMember*(policy; member: BareEnumMember): string =
+  member.name
 
-method renameStructMember*(policy; name: string): string =
-  name
+method renameMember*(policy; member: BareStructMember): string =
+  member.name
 
 method renameModule*(policy; name: string): string =
   name
@@ -31,20 +31,28 @@ method disambiguate*(policy; name: string; id: int32): string =
 {.pop.} # base, gcSafe, tags: []
 
 type
-  TypeDeclBodyNameInfo* = object
-    memberNames*: seq[string]
+  TypeDeclHeaderNameInfo* = object
+    name*: string
+    disambiguationId*: int32 # TODO: Replace with a `bool`.
+
+  EnumMemberNameInfo* = tuple[name: string]
+
+  StructMemberNameInfo* = tuple
+    name, ty: string
+
+  TypeDeclBodyNameInfo*[M] = object
+    members*: seq[M]
     hadInvalidMembers*: bool
 
-  TypeDeclNameInfo* = object
-    name*: string
-    body*: TypeDeclBodyNameInfo
-    disambiguationId*: int32 # TODO: Replace with a `bool`.
+  TypeDeclNameInfo*[M] = object
+    header*: TypeDeclHeaderNameInfo
+    body*: TypeDeclBodyNameInfo[M]
 
   NameAssignment* = object
     apiName*: string
-    paramsNameInfo*: TypeDeclBodyNameInfo
-    enumNameInfos*: seq[TypeDeclNameInfo]
-    structNameInfos*: seq[TypeDeclNameInfo]
+    paramsNameInfo*: TypeDeclBodyNameInfo[StructMemberNameInfo]
+    enumNameInfos*: seq[TypeDeclNameInfo[EnumMemberNameInfo]]
+    structNameInfos*: seq[TypeDeclNameInfo[StructMemberNameInfo]]
 
 template getEnumInfo*(names: NameAssignment; id: EnumId): TypeDeclNameInfo =
   names.enumNameInfos[id.int]

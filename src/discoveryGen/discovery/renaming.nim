@@ -1,3 +1,4 @@
+from   std/sequtils import mapIt
 import std/tables
 import ../discovery
 import ../discovery/naming
@@ -23,14 +24,8 @@ template renameMember(c: Context; member: BareEnumMember): string =
 template renameMember(c: Context; member: BareStructMember): string =
   c.policy[].renameStructMember member.name
 
-proc processTypeDeclBody(c: Context; members: openArray[AggregateMember]): TypeDeclBodyNameInfo =
-  newSeq result.memberNames, members.len
-  for i, m in members:
-    let naive = c.renameMember m.bare
-    let fixed = c.policy[].fixIdent naive
-    if fixed != naive:
-      result.hadInvalidMembers = true
-    result.memberNames[i] = fixed
+proc processTypeDeclBody(c: Context; members: openArray[AggregateMember]): seq[string] =
+  members.mapIt c.policy[].fixIdent c.renameMember it.bare
 
 proc assignDisambiguationId(c: var Context; header: var TypeDeclHeaderNameInfo) =
   let cell = addr c.registry.mgetOrPut(header.name, addr header)
@@ -45,19 +40,19 @@ proc assignDisambiguationId(c: var Context; header: var TypeDeclHeaderNameInfo) 
     header.name = c.policy[].disambiguate(header.name, header.disambiguationId)
     cell[] = addr header
 
-proc processTypeDecl(c: var Context; decl: EnumDecl | StructDecl): TypeDeclNameInfo =
-  result.header.name = c.policy[].fixIdent c.renameTypeDecl decl
-  result.body = c.processTypeDeclBody decl.members
-  c.assignDisambiguationId result.header
+proc processTypeDecl(c: var Context; info: var TypeDeclNameInfo; decl: EnumDecl | StructDecl) =
+  info.header.name = c.policy[].fixIdent c.renameTypeDecl decl
+  info.memberNames = c.processTypeDeclBody decl.members
+  c.assignDisambiguationId info.header
 
 proc assignNames*(api: AnalyzedApi; policy: var NamingPolicy): NameAssignment =
   var c = Context(policy: addr policy)
   result.apiName = policy.fixIdent policy.renameModule api.name
-  result.paramsNameInfo = c.processTypeDeclBody api.params.members
+  result.paramNames = c.processTypeDeclBody api.params.members
   # These arrays must not reallocate since we take addresses of their members.
   newSeq result.enumNameInfos, api.enumDecls.len
   newSeq result.structNameInfos, api.structDecls.len
   for i, en in api.enumDecls:
-    result.enumNameInfos[i] = c.processTypeDecl en
-  for i, st in api.structDecls:
-    result.structNameInfos[i] = c.processTypeDecl st
+    c.processTypeDecl result.enumNameInfos[i], en
+  for i, st in api.structDecls: # BUG: Should have priority.
+    c.processTypeDecl result.structNameInfos[i], st

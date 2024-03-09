@@ -1,6 +1,6 @@
 from   std/math import isNaN
 from   std/paths import `/`, Path
-from   std/sequtils import allIt
+from   std/sequtils import allIt, anyIt
 import std/strformat
 from   std/strutils as su import `%`, join, replace
 import std/tables
@@ -88,7 +88,7 @@ method renameStructMember*(policy; name: string): string =
 method renameModule*(policy; name: string): string =
   name.convertStyle snakeCase
 
-method fixIdent*(policy; name: string): string =
+func fixIdent(name: string): string =
   case name
   of  # https://dlang.org/spec/lex.html#keywords
       "abstract", "alias", "align", "asm", "assert", "auto", #["body",]# "bool", "break", "byte",
@@ -112,6 +112,9 @@ method fixIdent*(policy; name: string): string =
     name
   else:
     '_' & name
+
+method fixIdent*(policy; name: string): string =
+  name.fixIdent
 
 func needsNullable(ty: Type): bool =
   stfHasDefault not_in ty.scalar.flags and ty.containers.len == 0
@@ -151,9 +154,11 @@ proc emitAltDocs(e; docs: openArray[string]) =
   else:
     e.emit "///\p"
 
-proc emitEnumMember(e; id: int; member: EnumMember; info: TypeDeclNameInfo; deprecated: bool) =
-  let name = info.body.memberNames[id]
-  let haveAlias = not info.body.hadInvalidMembers and name != member.bare.name
+proc emitEnumMember(
+  e; hasInvalidMembers: bool; id: int; member: EnumMember; info: TypeDeclNameInfo; deprecated: bool;
+) =
+  let name = info.memberNames[id]
+  let haveAlias = not hasInvalidMembers and name != member.bare.name
   if haveAlias:
     if deprecated:
       e.emit "deprecated "
@@ -162,17 +167,20 @@ proc emitEnumMember(e; id: int; member: EnumMember; info: TypeDeclNameInfo; depr
   e.emitAltDocs member.descriptions
   if deprecated:
     e.emit "deprecated "
+  if hasInvalidMembers:
+    e.emit &"@(.name({Quoted member.bare.name})) "
   e.emit name
   if haveAlias:
     e.emit &" = {id}"
   e.emit ",\p"
 
 proc emitEnumDecl(e; en: EnumDecl; info: TypeDeclNameInfo) =
+  let hasInvalidMembers = en.members.anyIt it.bare.name.fixIdent != it.bare.name
   let baseTy = if en.members.len <= 256: "ubyte" else: "ushort"
   e.emit &"///\penum {info.header.name}: {baseTy} {{\p"
   e.indent
   for i, member in en.members:
-    e.emitEnumMember i, member, info, en.isDeprecated i.EnumMemberId
+    e.emitEnumMember hasInvalidMembers, i, member, info, en.isDeprecated i.EnumMemberId
   e.dedent
   e.emit "}\p"
 
@@ -221,11 +229,11 @@ iterator memberUdas(m: BareStructMember; memberName: string): (UdaName, string) 
       else: break blk
 
 proc emitMemberUdas(
-  e; c: var StructBodyContext; memberId: int; m: BareStructMember; info: TypeDeclBodyNameInfo;
+  e; c: var StructBodyContext; memberId: int; m: BareStructMember; memberNames: openArray[string];
 ) =
   let scalar = m.ty.scalar
   var simpleSyntax = true
-  for (uda, code) in m.memberUdas info.memberNames[memberId]:
+  for (uda, code) in m.memberUdas memberNames[memberId]:
     c.attrs.add:
       if uda not_in c.forbidden:
         code
@@ -321,20 +329,22 @@ proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType) =
         # TODO: Use local type alias.
         info = names.getEnumInfo scalar.enumId
         eName = info.header.name
-        eMemberName = info.body.memberNames[scalar.defaultMember.int]
+        eMemberName = info.memberNames[scalar.defaultMember.int]
       e.emit &" = {eName}.{eMemberName}"
   of stkJson, stkStruct: discard
 
 proc emitMemberTypeAlias(e; alias: MemberTypeAlias) =
   e.emit &"alias {alias.name} = .{alias.tyHeader.name}; /// ditto\p"
 
-proc emitStructBody(e; api; names: NameAssignment; body: StructBody; info: TypeDeclBodyNameInfo) =
-  var ctx = initStructBodyContext info.memberNames
+proc emitStructBody(
+  e; api; names: NameAssignment; body: StructBody; memberNames: openArray[string];
+) =
+  var ctx = initStructBodyContext memberNames
   e.indent
   for memberId, m in body.members:
-    let memberName = info.memberNames[memberId]
+    let memberName = memberNames[memberId]
     e.emitAltDocs m.descriptions
-    e.emitMemberUdas ctx, memberId, m.bare, info
+    e.emitMemberUdas ctx, memberId, m.bare, memberNames
     let alias = e.emitMemberType(api, names, memberName, m.bare.ty)
     e.emit &" {memberName}"
     if stfHasDefault in m.bare.ty.scalar.flags and m.bare.ty.containers.len == 0:
@@ -348,7 +358,7 @@ proc emitStructBody(e; api; names: NameAssignment; body: StructBody; info: TypeD
 proc emitStructDecl(e; api; names: NameAssignment; st: StructDecl; info: TypeDeclNameInfo) =
   e.emitDocComment st.description
   e.emit &"struct {info.header.name} {{\p"
-  e.emitStructBody api, names, st.body, info.body
+  e.emitStructBody api, names, st.body, info.memberNames
   e.emit "}\p"
 
 func initTypesCodegen(c; settings): Codegen =
@@ -383,7 +393,7 @@ func initTypesCodegen(c; settings): Codegen =
 
     "commonParameters":
       e.emit "///\pstruct CommonParameters {\p"
-      e.emitStructBody c.api, settings.names, c.api.params, settings.names.paramsNameInfo
+      e.emitStructBody c.api, settings.names, c.api.params, settings.names.paramNames
       e.emit "}\p"
       e.endSection
 

@@ -37,17 +37,13 @@ type
     name*: string
     disambiguationId*: int32 # TODO: Replace with a `bool`.
 
-  TypeDeclBodyNameInfo* = object
-    memberNames*: seq[string]
-    hadInvalidMembers*: bool
-
   TypeDeclNameInfo* = object
     header*: TypeDeclHeaderNameInfo
-    body*: TypeDeclBodyNameInfo
+    memberNames*: seq[string]
 
   NameAssignment* = object
     apiName*: string
-    paramsNameInfo*: TypeDeclBodyNameInfo
+    paramNames*: seq[string]
     enumNameInfos*: seq[TypeDeclNameInfo]
     structNameInfos*: seq[TypeDeclNameInfo]
 

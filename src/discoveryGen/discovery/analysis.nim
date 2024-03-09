@@ -347,7 +347,7 @@ proc finalizeAnonStructDecl(c; st: var StructDecl; stats: AnonStats) =
   c.finalizeMemberDescriptions st.body.members, stats.descriptions
 
 func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
-  var c = Context(curStructId: StructId -1)
+  var c = Context(api: AnalyzedApi(name: raw.name), curStructId: StructId -1)
   newSeq c.api.structDecls, raw.schemas.len
   c.structRegistry = collect initTable(raw.schemas.len):
     for i, name in enumerate raw.schemas.keys:

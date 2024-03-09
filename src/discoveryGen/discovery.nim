@@ -91,6 +91,7 @@ type
     memberDeprecations*: seq[bool] # Stored separately to save memory.
 
   AnalyzedApi* = object
+    name*: string
     usesJsonType*: bool
     params*: StructBody
     enumDecls*: seq[EnumDecl]

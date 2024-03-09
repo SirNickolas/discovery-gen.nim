@@ -247,7 +247,15 @@ proc emitMemberUdas(
         &"@({s}) "
     c.attrs.setLen 0
 
-proc emitMemberType(e; names: NameAssignment; ty: Type) =
+type MemberTypeAlias = object
+  name: string
+  tyHeader: ptr TypeDeclHeaderNameInfo
+
+func getMemberTypeName(memberName: string; ty: Type): string =
+  (if ty.containers.len == 0: memberName else: memberName.singularize).convertStyle(pascalCase)
+
+proc emitMemberType(e; api: AnalyzedApi; names: NameAssignment; memberName: string; ty: Type):
+    MemberTypeAlias =
   if ty.needsNullable:
     e.emit "Nullable!"
   e.emit:
@@ -261,10 +269,20 @@ proc emitMemberType(e; names: NameAssignment; ty: Type) =
     of stkI64: "long"
     of stkU64: "ulong"
     of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask: "string"
-    of stkEnum: names.getEnumInfo(ty.scalar.enumId).header.name
+    of stkEnum:
+      result.tyHeader = addr names.getEnumInfo(ty.scalar.enumId).header
+      result.name = getMemberTypeName(memberName, ty)
+      result.name
     of stkStruct:
-      let s = names.getStructInfo(ty.scalar.structId).header.name
-      if not ty.scalar.circular: s else: s & '*'
+      let header = addr names.getStructInfo(ty.scalar.structId).header
+      if api.getStruct(ty.scalar.structId).header.hasInferredName:
+        result.tyHeader = header
+        result.name = getMemberTypeName(memberName, ty)
+        result.name # No need to check `circular`.
+      elif not ty.scalar.circular:
+        header.name
+      else:
+        header.name & '*'
   for i in countDown(ty.containers.high, 0):
     e.emit:
       case ty.containers[i]
@@ -306,11 +324,8 @@ proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType) =
       e.emit &" = {eName}.{eMemberName}"
   of stkJson, stkStruct: discard
 
-proc emitMemberTypeAlias(e; ty: Type; memberName, globalName: string) =
-  let localName =
-    (if ty.containers.len == 0: memberName else: memberName.singularize)
-    .convertStyle(pascalCase)
-  e.emit &"alias {localName} = .{globalName}; /// ditto\p"
+proc emitMemberTypeAlias(e; alias: MemberTypeAlias) =
+  e.emit &"alias {alias.name} = .{alias.tyHeader.name}; /// ditto\p"
 
 proc emitStructBody(e; api; names: NameAssignment; body: StructBody; info: TypeDeclBodyNameInfo) =
   var ctx = initStructBodyContext info.members
@@ -319,21 +334,13 @@ proc emitStructBody(e; api; names: NameAssignment; body: StructBody; info: TypeD
     let memberName = info.members[memberId].name
     e.emitAltDocs m.descriptions
     e.emitMemberUdas ctx, memberId, m.bare, info
-    e.emitMemberType names, m.bare.ty
+    let alias = e.emitMemberType(api, names, memberName, m.bare.ty)
     e.emit &" {memberName}"
     if stfHasDefault in m.bare.ty.scalar.flags and m.bare.ty.containers.len == 0:
       e.emitDefaultVal names, m.bare.ty.scalar
     e.emit ";\p"
-
-    case m.bare.ty.scalar.kind:
-      of stkEnum:
-        let id = m.bare.ty.scalar.enumId
-        e.emitMemberTypeAlias m.bare.ty, memberName, names.getEnumInfo(id).header.name
-      of stkStruct:
-        let id = m.bare.ty.scalar.structId
-        if api.getStruct(id).header.hasInferredName:
-          e.emitMemberTypeAlias m.bare.ty, memberName, names.getStructInfo(id).header.name
-      else: discard
+    if alias.tyHeader != nil:
+      e.emitMemberTypeAlias alias
 
   e.dedent
 

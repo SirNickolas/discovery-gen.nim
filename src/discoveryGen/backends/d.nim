@@ -79,11 +79,11 @@ method renameEnum*(policy; name: string): string =
 method renameStruct*(policy; name: string): string =
   name.convertStyle pascalCase
 
-method renameMember*(policy; member: BareEnumMember): string =
-  member.name.convertStyle camelCase
+method renameEnumMember*(policy; name: string): string =
+  name.convertStyle camelCase
 
-method renameMember*(policy; member: BareStructMember): string =
-  member.name.convertStyle camelCase
+method renameStructMember*(policy; name: string): string =
+  name.convertStyle camelCase
 
 method renameModule*(policy; name: string): string =
   name.convertStyle snakeCase

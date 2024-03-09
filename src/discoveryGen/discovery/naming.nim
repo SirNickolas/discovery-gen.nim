@@ -12,11 +12,11 @@ method renameEnum*(policy; name: string): string =
 method renameStruct*(policy; name: string): string =
   name
 
-method renameMember*(policy; member: BareEnumMember): string =
-  member.name
+method renameEnumMember*(policy; name: string): string =
+  name
 
-method renameMember*(policy; member: BareStructMember): string =
-  member.name
+method renameStructMember*(policy; name: string): string =
+  name
 
 method renameModule*(policy; name: string): string =
   name
@@ -25,7 +25,9 @@ method fixIdent*(policy; name: string): string =
   raiseAssert "Not implemented"
 
 method disambiguate*(policy; name: string; id: int32): string =
-  result = name & '_'
+  result = newStringOfCap name.len + 11
+  result.add name
+  result.add '_'
   result.addInt id
 
 {.pop.} # base, gcSafe, tags: []

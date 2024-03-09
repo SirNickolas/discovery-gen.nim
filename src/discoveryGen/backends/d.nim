@@ -153,11 +153,11 @@ proc emitAltDocs(e; docs: openArray[string]) =
 
 proc emitEnumMember(e; id: int; member: EnumMember; info: TypeDeclNameInfo; deprecated: bool) =
   let name = info.body.memberNames[id]
-  let haveAlias = not info.body.hadInvalidMembers and name != member.name
+  let haveAlias = not info.body.hadInvalidMembers and name != member.bare
   if haveAlias:
     if deprecated:
       e.emit "deprecated "
-    e.emit &"{member.name},\p" # Undocumented, but will be serialized as this name.
+    e.emit &"{member.bare},\p" # Undocumented, but will be serialized as this name.
 
   e.emitAltDocs member.descriptions
   if deprecated:

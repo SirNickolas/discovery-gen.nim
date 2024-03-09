@@ -64,26 +64,25 @@ type
     name: string
     ty: Type
 
-  StructMember* = object
-    bare*: BareStructMember
+  AggregateMember*[B] = object
+    bare*: B
     descriptions*: seq[string]
 
-  StructBody* = object
-    members*: seq[StructMember]
-    allMemberFlags*, anyMemberFlags*: set[ScalarTypeFlag]
+  StructMember* = AggregateMember[BareStructMember]
+  EnumMember*   = AggregateMember[string]
 
   TypeDeclHeader* = object
     names*: seq[string]
     hasInferredName*, hasCertainName*: bool
 
+  StructBody* = object
+    members*: seq[StructMember]
+    allMemberFlags*, anyMemberFlags*: set[ScalarTypeFlag]
+
   StructDecl* = object
     header*: TypeDeclHeader
     description*: string
     body*: StructBody
-
-  EnumMember* = object
-    name*: string
-    descriptions*: seq[string]
 
   EnumDecl* = object
     header*: TypeDeclHeader

@@ -147,7 +147,7 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
     var members = newSeq[EnumMember] names.len
     let byName = collect initTable(names.len):
       for i, name in names:
-        members[i].name = name
+        members[i].bare = name
         {name: i.EnumMemberId}
     c.api.enumDecls &= EnumDecl(
       header: TypeDeclHeader(hasInferredName: true),
@@ -331,9 +331,7 @@ proc finalizeTypeDeclHeader(c; header: var TypeDeclHeader; names: CountTable[str
     header.hasCertainName = true
 
 proc finalizeMemberDescriptions(
-  c;
-  members: var openArray[EnumMember | StructMember];
-  descriptionsTables: openArray[CountTable[string]];
+  c; members: var openArray[AggregateMember]; descriptionsTables: openArray[CountTable[string]];
 ) =
   for i, descriptions in descriptionsTables:
     members[i].descriptions = descriptions.sortKeysVia c.tmp

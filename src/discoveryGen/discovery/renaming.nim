@@ -10,15 +10,14 @@ type Context = object
 
 using c: var Context
 
-proc processDeclBody[T: EnumMember | StructMember](c: Context; members: openArray[T]):
-    TypeDeclBodyNameInfo =
+proc processDeclBody[B](c: Context; members: openArray[AggregateMember[B]]): TypeDeclBodyNameInfo =
   newSeq result.memberNames, members.len
   for i, m in members:
     let naive =
-      when T is EnumMember:
-        c.policy[].renameEnumMember m.name
-      else:
+      when B is BareStructMember:
         c.policy[].renameStructMember m.bare.name
+      else:
+        c.policy[].renameEnumMember m.bare
     let fixed = c.policy[].fixIdent naive
     if fixed != naive:
       result.hadInvalidMembers = true

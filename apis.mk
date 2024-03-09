@@ -191,7 +191,7 @@ $(SCHEMA_DIR)/datapipelines.json:
 $(SCHEMA_DIR)/dataplex.json:
 	$(CURL) $(CURL_FLAGS) -o $@ 'https://dataplex.googleapis.com/$$discovery/rest?version=v1'
 $(SCHEMA_DIR)/dataportability.json:
-	$(CURL) $(CURL_FLAGS) -o $@ 'https://dataportability.googleapis.com/$$discovery/rest?version=v1beta'
+	$(CURL) $(CURL_FLAGS) -o $@ 'https://dataportability.googleapis.com/$$discovery/rest?version=v1'
 $(SCHEMA_DIR)/dataproc.json:
 	$(CURL) $(CURL_FLAGS) -o $@ 'https://dataproc.googleapis.com/$$discovery/rest?version=v1'
 $(SCHEMA_DIR)/datastore.json:

@@ -7,7 +7,7 @@ export naming
 
 type Context = object
   policy: ptr NamingPolicy
-  registry: Table[string, ptr TypeDeclHeaderNameInfo]
+  registry: Table[string, tuple[weakHeader: ptr TypeDeclHeaderNameInfo; disambiguationId: int]]
 
 template members(st: StructDecl): openArray[StructMember] =
   st.body.members
@@ -27,32 +27,35 @@ template renameMember(c: Context; member: BareStructMember): string =
 proc processTypeDeclBody(c: Context; members: openArray[AggregateMember]): seq[string] =
   members.mapIt c.policy[].fixIdent c.renameMember it.bare
 
-proc assignDisambiguationId(c: var Context; header: var TypeDeclHeaderNameInfo) =
-  let cell = addr c.registry.mgetOrPut(header.name, addr header)
-  let prev = cell[]
-  if prev == addr header:
-    header.disambiguationId = -1
-  else:
-    if prev.disambiguationId < 0:
-      prev.name = c.policy[].disambiguate(prev.name, 0)
-      prev.disambiguationId = 0
-    header.disambiguationId = prev.disambiguationId + 1
-    header.name = c.policy[].disambiguate(header.name, header.disambiguationId)
-    cell[] = addr header
+proc assignDisambiguationId(c: var Context; header: var TypeDeclHeaderNameInfo; strong: bool) =
+  let headerToPut = if strong: nil else: addr header
+  let cell = addr c.registry.mgetOrPut(header.name, (weakHeader: headerToPut, disambiguationId: -1))
+  if cell.weakHeader != headerToPut:
+    assert not strong
+    if cell.disambiguationId < 0 and cell.weakHeader != nil:
+      # Previously declared symbol is weak and was supposed to be unambiguous.
+      cell.weakHeader.name = c.policy[].disambiguate(header.name, 0)
+      cell.weakHeader.ambiguous = true
+      cell.disambiguationId = 1
+    else:
+      cell.disambiguationId += 1
+
+    header.name = c.policy[].disambiguate(header.name, cell.disambiguationId)
+    header.ambiguous = true
 
 proc processTypeDecl(c: var Context; info: var TypeDeclNameInfo; decl: EnumDecl | StructDecl) =
   info.header.name = c.policy[].fixIdent c.renameTypeDecl decl
   info.memberNames = c.processTypeDeclBody decl.members
-  c.assignDisambiguationId info.header
+  c.assignDisambiguationId info.header, not decl.header.hasInferredName
 
 proc assignNames*(api: AnalyzedApi; policy: var NamingPolicy): NameAssignment =
   var c = Context(policy: addr policy)
   result.apiName = policy.fixIdent policy.renameModule api.name
   result.paramNames = c.processTypeDeclBody api.params.members
   # These arrays must not reallocate since we take addresses of their members.
-  newSeq result.enumNameInfos, api.enumDecls.len
   newSeq result.structNameInfos, api.structDecls.len
+  newSeq result.enumNameInfos, api.enumDecls.len
+  for i, st in api.structDecls: # Should have priority over enums.
+    c.processTypeDecl result.structNameInfos[i], st
   for i, en in api.enumDecls:
     c.processTypeDecl result.enumNameInfos[i], en
-  for i, st in api.structDecls: # BUG: Should have priority.
-    c.processTypeDecl result.structNameInfos[i], st

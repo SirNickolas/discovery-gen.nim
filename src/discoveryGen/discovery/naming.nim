@@ -24,8 +24,8 @@ method renameModule*(policy; name: string): string =
 method fixIdent*(policy; name: string): string =
   raiseAssert "Not implemented"
 
-method disambiguate*(policy; name: string; id: int32): string =
-  result = newStringOfCap name.len + 11
+method disambiguate*(policy; name: string; id: Natural): string =
+  result = newStringOfCap name.len + 5
   result.add name
   result.add '_'
   result.addInt id
@@ -35,7 +35,7 @@ method disambiguate*(policy; name: string; id: int32): string =
 type
   TypeDeclHeaderNameInfo* = object
     name*: string
-    disambiguationId*: int32 # TODO: Replace with a `bool`.
+    ambiguous*: bool
 
   TypeDeclNameInfo* = object
     header*: TypeDeclHeaderNameInfo

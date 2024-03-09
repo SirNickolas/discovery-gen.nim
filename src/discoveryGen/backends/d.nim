@@ -152,7 +152,7 @@ proc emitAltDocs(e; docs: openArray[string]) =
     e.emit "///\p"
 
 proc emitEnumMember(e; id: int; member: EnumMember; info: TypeDeclNameInfo; deprecated: bool) =
-  let name = info.body.members[id].name
+  let name = info.body.memberNames[id]
   let haveAlias = not info.body.hadInvalidMembers and name != member.bare.name
   if haveAlias:
     if deprecated:
@@ -176,11 +176,11 @@ proc emitEnumDecl(e; en: EnumDecl; info: TypeDeclNameInfo) =
   e.dedent
   e.emit "}\p"
 
-func initStructBodyContext(members: openArray[StructMemberNameInfo]): StructBodyContext =
+func initStructBodyContext(memberNames: openArray[string]): StructBodyContext =
   result.attrs = newSeqOfCap[string] 5
-  for m in members:
+  for name in memberNames:
     result.forbidden.incl:
-      case m.name
+      case name
       of "base64Encoded": udaBase64Encoded
       of "byName":        udaByName
       of "date":          udaDate
@@ -225,7 +225,7 @@ proc emitMemberUdas(
 ) =
   let scalar = m.ty.scalar
   var simpleSyntax = true
-  for (uda, code) in m.memberUdas info.members[memberId].name:
+  for (uda, code) in m.memberUdas info.memberNames[memberId]:
     c.attrs.add:
       if uda not_in c.forbidden:
         code
@@ -318,9 +318,10 @@ proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType) =
   of stkEnum:
     if scalar.defaultMember.int != 0:
       let
+        # TODO: Use local type alias.
         info = names.getEnumInfo scalar.enumId
         eName = info.header.name
-        eMemberName = info.body.members[scalar.defaultMember.int].name
+        eMemberName = info.body.memberNames[scalar.defaultMember.int]
       e.emit &" = {eName}.{eMemberName}"
   of stkJson, stkStruct: discard
 
@@ -328,10 +329,10 @@ proc emitMemberTypeAlias(e; alias: MemberTypeAlias) =
   e.emit &"alias {alias.name} = .{alias.tyHeader.name}; /// ditto\p"
 
 proc emitStructBody(e; api; names: NameAssignment; body: StructBody; info: TypeDeclBodyNameInfo) =
-  var ctx = initStructBodyContext info.members
+  var ctx = initStructBodyContext info.memberNames
   e.indent
   for memberId, m in body.members:
-    let memberName = info.members[memberId].name
+    let memberName = info.memberNames[memberId]
     e.emitAltDocs m.descriptions
     e.emitMemberUdas ctx, memberId, m.bare, info
     let alias = e.emitMemberType(api, names, memberName, m.bare.ty)

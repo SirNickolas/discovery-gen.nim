@@ -1,4 +1,4 @@
-from ../discovery import BareEnumMember, BareStructMember, EnumId, StructId
+from ../discovery import EnumId, StructId
 
 type NamingPolicy* = object of RootObj
 
@@ -37,24 +37,19 @@ type
     name*: string
     disambiguationId*: int32 # TODO: Replace with a `bool`.
 
-  EnumMemberNameInfo* = tuple[name: string]
-
-  StructMemberNameInfo* = tuple
-    name, ty: string
-
-  TypeDeclBodyNameInfo*[M] = object
-    members*: seq[M]
+  TypeDeclBodyNameInfo* = object
+    memberNames*: seq[string]
     hadInvalidMembers*: bool
 
-  TypeDeclNameInfo*[M] = object
+  TypeDeclNameInfo* = object
     header*: TypeDeclHeaderNameInfo
-    body*: TypeDeclBodyNameInfo[M]
+    body*: TypeDeclBodyNameInfo
 
   NameAssignment* = object
     apiName*: string
-    paramsNameInfo*: TypeDeclBodyNameInfo[StructMemberNameInfo]
-    enumNameInfos*: seq[TypeDeclNameInfo[EnumMemberNameInfo]]
-    structNameInfos*: seq[TypeDeclNameInfo[StructMemberNameInfo]]
+    paramsNameInfo*: TypeDeclBodyNameInfo
+    enumNameInfos*: seq[TypeDeclNameInfo]
+    structNameInfos*: seq[TypeDeclNameInfo]
 
 template getEnumInfo*(names: NameAssignment; id: EnumId): TypeDeclNameInfo =
   names.enumNameInfos[id.int]

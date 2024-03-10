@@ -346,18 +346,33 @@ proc finalizeAnonStructDecl(c; st: var StructDecl; stats: AnonStats) =
 
 func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
   var c = Context(api: AnalyzedApi(name: raw.name), curStructId: StructId -1)
-  newSeq c.api.structDecls, raw.schemas.len
-  c.structRegistry = collect initTable(raw.schemas.len):
-    for i, name in enumerate raw.schemas.keys:
-      # TODO: Handle aliases to JSON type.
-      c.api.structDecls[i].header = TypeDeclHeader(names: @[name], hasCertainName: true)
-      {name: i.StructId}
+  # Build the registry before processing anything.
+  c.structRegistry = initTable[string, StructId] raw.schemas.len
+  c.api.structDecls = collect newSeqOfCap(raw.schemas.len):
+    for name, schema in raw.schemas:
+      case schema.`type`
+      of "object":
+        # TODO: Support aliases to associative arrays (`schema.additionalProperties.isSome`).
+        c.structRegistry[name] = c.structRegistry.len.StructId
+      of "any":
+        c.jsonAliases.incl name
+        continue
+      else:
+        raise DiscoveryAnalysisError.newException:
+          "Unsupported type \"" & schema.`type` & "\" for a global schema"
+
+      StructDecl(
+        header: TypeDeclHeader(names: @[name], hasCertainName: true),
+        description: schema.description,
+      )
 
   c.api.params = c.analyzeStructBody raw.parameters
-  for i, schema in enumerate raw.schemas.values:
-    c.curStructId = i.StructId
-    c.api.structDecls[i].description = schema.description
-    c.api.structDecls[i].body = c.analyzeStructBody schema.properties
+  var id = 0
+  for schema in raw.schemas.values:
+    if schema.`type` == "object":
+      c.curStructId = id.StructId
+      c.api.structDecls[id].body = c.analyzeStructBody schema.properties
+      id += 1
 
   for enumId, stats in c.enumStats:
     c.finalizeEnumDecl c.api.enumDecls[enumId], stats

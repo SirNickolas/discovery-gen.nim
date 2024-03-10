@@ -116,6 +116,9 @@ func fixIdent(name: string): string =
 method fixIdent*(policy; name: string): string =
   name.fixIdent
 
+func isHiddenType(header: TypeDeclHeader; info: TypeDeclHeaderNameInfo): bool =
+  header.hasInferredName and (not header.hasCertainName or info.ambiguous or info.name.len <= 5)
+
 func needsNullable(ty: Type): bool =
   stfHasDefault not_in ty.scalar.flags and ty.containers.len == 0
 
@@ -257,7 +260,8 @@ proc emitMemberUdas(
 
 type MemberTypeAlias = object
   name: string
-  tyHeader: ptr TypeDeclHeaderNameInfo
+  tyInfo: ptr TypeDeclHeaderNameInfo
+  hidden: bool
 
 func getMemberTypeName(memberName: string; ty: Type): string =
   (if ty.containers.len == 0: memberName else: memberName.singularize).convertStyle(pascalCase)
@@ -278,19 +282,22 @@ proc emitMemberType(e; api: AnalyzedApi; names: NameAssignment; memberName: stri
     of stkU64: "ulong"
     of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask: "string"
     of stkEnum:
-      result.tyHeader = addr names.getEnumInfo(ty.scalar.enumId).header
+      result.tyInfo = addr names.getEnumInfo(ty.scalar.enumId).header
+      result.hidden = api.getEnum(ty.scalar.enumId).header.isHiddenType result.tyInfo[]
       result.name = getMemberTypeName(memberName, ty)
       result.name
     of stkStruct:
-      let header = addr names.getStructInfo(ty.scalar.structId).header
-      if api.getStruct(ty.scalar.structId).header.hasInferredName:
-        result.tyHeader = header
+      let header = addr api.getStruct(ty.scalar.structId).header
+      let info = addr names.getStructInfo(ty.scalar.structId).header
+      if header.hasInferredName:
+        result.tyInfo = info
+        result.hidden = header[].isHiddenType info[]
         result.name = getMemberTypeName(memberName, ty)
         result.name # No need to check `circular`.
       elif not ty.scalar.circular:
-        header.name
+        info.name
       else:
-        header.name & '*'
+        info.name & '*'
   for i in countDown(ty.containers.high, 0):
     e.emit:
       case ty.containers[i]
@@ -334,7 +341,8 @@ proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType) =
   of stkJson, stkStruct: discard
 
 proc emitMemberTypeAlias(e; alias: MemberTypeAlias) =
-  e.emit &"alias {alias.name} = .{alias.tyHeader.name}; /// ditto\p"
+  let namespace = if alias.hidden: "_P" else: ""
+  e.emit &"alias {alias.name} = {namespace}.{alias.tyInfo.name}; /// ditto\p"
 
 proc emitStructBody(
   e; api; names: NameAssignment; body: StructBody; memberNames: openArray[string];
@@ -350,7 +358,7 @@ proc emitStructBody(
     if stfHasDefault in m.bare.ty.scalar.flags and m.bare.ty.containers.len == 0:
       e.emitDefaultVal names, m.bare.ty.scalar
     e.emit ";\p"
-    if alias.tyHeader != nil:
+    if alias.tyInfo != nil:
       e.emitMemberTypeAlias alias
 
   e.dedent
@@ -360,6 +368,18 @@ proc emitStructDecl(e; api; names: NameAssignment; st: StructDecl; info: TypeDec
   e.emit &"struct {info.header.name} {{\p"
   e.emitStructBody api, names, st.body, info.memberNames
   e.emit "}\p"
+
+proc emitEnumDecls(e; api; names: NameAssignment; hidden: bool) =
+  for i, info in names.enumNameInfos:
+    if api.enumDecls[i].header.isHiddenType(info.header) == hidden:
+      e.emitEnumDecl api.enumDecls[i], info
+      e.endSection
+
+proc emitStructDecls(e; api; names: NameAssignment; hidden: bool) =
+  for i, info in names.structNameInfos:
+    if api.structDecls[i].header.isHiddenType(info.header) == hidden:
+      e.emitStructDecl api, names, api.structDecls[i], info
+      e.endSection
 
 func initTypesCodegen(c; settings): Codegen =
   declareCodegen('#', e):
@@ -386,10 +406,26 @@ func initTypesCodegen(c; settings): Codegen =
       """
       e.endSection
 
+    "hiddenNamespaceHeader":
+      e.emit "///\ppackage struct _P {\p"
+      e.indent
+
+    "hiddenEnums":
+      e.emitEnumDecls c.api, settings.names, hidden = true
+
+    "hiddenStructs":
+      e.emitStructDecls c.api, settings.names, hidden = true
+
+    "hiddenNamespaceFooter":
+      e.dedent
+      e.emit "}\p"
+      e.endSection
+
     "enums":
-      for i, en in c.api.enumDecls:
-        e.emitEnumDecl en, settings.names.enumNameInfos[i]
-        e.endSection
+      e.emitEnumDecls c.api, settings.names, hidden = false
+
+    "structs":
+      e.emitStructDecls c.api, settings.names, hidden = false
 
     "commonParameters":
       e.emit "///\pstruct CommonParameters {\p"
@@ -406,11 +442,6 @@ func initTypesCodegen(c; settings): Codegen =
       }
       """
       e.endSection
-
-    "structs":
-      for i, st in c.api.structDecls:
-        e.emitStructDecl c.api, settings.names, st, settings.names.structNameInfos[i]
-        e.endSection
 
 #[
 func initPackageCodegen(c: Context): Codegen =

@@ -314,7 +314,7 @@ proc emitMemberType(e; api: AnalyzedApi; names: NameAssignment; memberName: stri
       of ckArray: "[ ]"
       of ckDict: "[string]"
 
-proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType) =
+proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType; alias: MemberTypeAlias) =
   case scalar.kind
   of stkBool:
     if scalar.defaultBool:
@@ -342,12 +342,9 @@ proc emitDefaultVal(e; names: NameAssignment; scalar: ScalarType) =
       e.emit &" = {Quoted scalar.defaultString}"
   of stkEnum:
     if scalar.defaultMember.int != 0:
-      let
-        # TODO: Use local type alias.
-        info = names.getEnumInfo scalar.enumId
-        eName = info.header.name
-        eMemberName = info.memberNames[scalar.defaultMember.int]
-      e.emit &" = {eName}.{eMemberName}"
+      let memberName = names.getEnumInfo(scalar.enumId).memberNames[scalar.defaultMember.int]
+      assert alias.tyInfo != nil
+      e.emit &" = {alias.name}.{memberName}"
   of stkJson, stkStruct: discard
 
 proc emitMemberTypeAlias(e; alias: MemberTypeAlias) =
@@ -369,7 +366,7 @@ proc emitStructBody(
     let alias = e.emitMemberType(api, names, memberName, m.bare.ty)
     e.emit &" {memberName}"
     if stfHasDefault in m.bare.ty.scalar.flags and m.bare.ty.containers.len == 0:
-      e.emitDefaultVal names, m.bare.ty.scalar
+      e.emitDefaultVal names, m.bare.ty.scalar, alias
     e.emit ";\p"
     if alias.tyInfo != nil:
       e.emitMemberTypeAlias alias

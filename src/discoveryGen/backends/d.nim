@@ -413,12 +413,12 @@ func initTypesCodegen(c; settings): Codegen =
       e.endSection
 
     "publicImports":
-      e.emit "public import std.typecons: Nullable, nullable; ///\p"
+      e.emit "public import std.typecons: Nullable, apply, nullable; ///\p"
+      if c.api.usesJsonType:
+        e.emit "public import vibe.data.json: JSONException, Json; ///\p"
       e.endSection
 
     "imports":
-      if c.api.usesJsonType:
-        e.emit "import vibe.data.json: Json;\p"
       e.emit &dd"""
       import {settings.package}.d.attributes;
       import {settings.package}.d.http: GoogleHttpClient;

@@ -1,8 +1,10 @@
 from   std/math import isNaN
+from   std/parseutils as pu import nil
 from   std/paths import `/`, Path
 from   std/sequtils import allIt, anyIt, countIt
+from   std/strbasics import nil
 import std/strformat
-from   std/strutils as su import `%`, join, replace
+from   std/strutils import `%`, join, replace
 import std/tables
 import questionable
 import sourcegens/codegens
@@ -106,9 +108,9 @@ func fixIdent(name: string): string =
       # https://dlang.org/spec/property.html
       # https://dlang.org/spec/enum.html#enum_properties
       # https://dlang.org/spec/struct.html#struct_properties
-      "alignof", "init", "mangleof", "max", "min", "offsetof", "sizeof", "stringof", "tupleof":
+      "alignof", "init", "mangleof", "max", "min", "offsetof", "sizeof", "stringof", "tupleof",
+      "":
     name & '_'
-  of "": "_"
   elif name[0] not_in '0' .. '9':
     name
   else:
@@ -137,23 +139,30 @@ func formatMin(scalar: ScalarType): string =
 func formatMax(scalar: ScalarType): string =
   formatEitherInteger(scalar.kind, scalar.maxI32, scalar.maxU32)
 
-func toComment(s: string): string =
-  # TODO: Perform a smarter replacement.
-  s.replace("\n", "\p///\p/// ")
+func toDocComment(s: string; trailingLineBreak = false): string =
+  var idx = 0
+  var line = ""
+  while (idx += pu.skipWhitespace(s, idx); idx != s.len):
+    idx += pu.parseUntil(s, line, {'\n', '\r'}, idx)
+    strbasics.strip line, leading = false
+    result.add if result.len != 0: "\p///\p/// " else: "/// "
+    result.add line
+
+  if result.len == 0:
+    result = "///"
+  if trailingLineBreak:
+    result.add "\p"
 
 proc emitDocComment(e; doc: string) =
-  if doc.len != 0:
-    e.emit &"/// {doc.toComment}\p"
-  else:
-    e.emit "///\p"
+  e.emit doc.toDocComment(trailingLineBreak = true)
 
 proc emitAltDocs(e; docs: openArray[string]) =
   if docs.len != 0:
-    e.emit &"/// {docs[0].toComment}\p"
+    e.emit docs[0].toDocComment(trailingLineBreak = true)
     for desc in docs.toOpenArray(1, docs.high):
       e.emit &dd"""
       /// ___
-      /// {desc.toComment}
+      {desc.toDocComment}
       """
   else:
     e.emit "///\p"
@@ -463,7 +472,7 @@ func initPackageCodegen(c: Context): Codegen =
       e.emit &dd"""
       /// {c.api.title}.
       ///
-      /// {c.api.description.toComment}
+      {c.api.description.toDocComment}
       ///
       """
       if link =? c.api.documentationLink:

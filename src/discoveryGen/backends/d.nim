@@ -1,6 +1,6 @@
 from   std/math import isNaN
 from   std/paths import `/`, Path
-from   std/sequtils import allIt, anyIt
+from   std/sequtils import allIt, anyIt, countIt
 import std/strformat
 from   std/strutils as su import `%`, join, replace
 import std/tables
@@ -48,6 +48,7 @@ type
   StructBodyContext = object
     attrs: seq[string]
     forbidden: set[UdaName]
+    implicitOptional: bool
 
   Quoted = distinct string
 
@@ -187,7 +188,11 @@ proc emitEnumDecl(e; en: EnumDecl; info: TypeDeclNameInfo) =
   e.dedent
   e.emit "}\p"
 
-func initStructBodyContext(memberNames: openArray[string]): StructBodyContext =
+func initStructBodyContext(body: StructBody; memberNames: openArray[string]): StructBodyContext =
+  result.implicitOptional = (
+    stfRequired not_in body.anyMemberFlags and
+    body.members.countIt(not it.bare.ty.needsNullable) > 1
+  )
   result.attrs = newSeqOfCap[string] 5
   for name in memberNames:
     result.forbidden.incl:
@@ -207,10 +212,15 @@ func initStructBodyContext(memberNames: openArray[string]): StructBodyContext =
       of "readOnly":      udaReadOnly
       else: continue
 
-iterator memberUdas(m: BareStructMember; memberName: string): (UdaName, string) =
+iterator memberUdas(m: BareStructMember; memberName: string; implicitOptional: bool):
+    (UdaName, string) =
   let scalar = m.ty.scalar
   if stfRequired not_in scalar.flags:
-    yield if m.ty.needsNullable: (udaEmbedNullable, "embedNullable") else: (udaOptional, "optional")
+    block blk:
+      yield
+        if m.ty.needsNullable: (udaEmbedNullable, "embedNullable")
+        elif implicitOptional: break blk
+        else:                  (udaOptional, "optional")
   if memberName != m.name and memberName != m.name & '_':
     yield (udaName, &"name({Quoted m.name})")
   if stfReadOnly in scalar.flags:
@@ -236,7 +246,7 @@ proc emitMemberUdas(
 ) =
   let scalar = m.ty.scalar
   var simpleSyntax = true
-  for (uda, code) in m.memberUdas memberNames[memberId]:
+  for (uda, code) in m.memberUdas(memberNames[memberId], c.implicitOptional):
     c.attrs.add:
       if uda not_in c.forbidden:
         code
@@ -347,7 +357,10 @@ proc emitMemberTypeAlias(e; alias: MemberTypeAlias) =
 proc emitStructBody(
   e; api; names: NameAssignment; body: StructBody; memberNames: openArray[string];
 ) =
-  var ctx = initStructBodyContext memberNames
+  var ctx = initStructBodyContext(body, memberNames)
+  if ctx.implicitOptional:
+    e.emit if udaOptional in ctx.forbidden: "@(.optional):\p" else: "@optional:\p"
+
   e.indent
   for memberId, m in body.members:
     let memberName = memberNames[memberId]

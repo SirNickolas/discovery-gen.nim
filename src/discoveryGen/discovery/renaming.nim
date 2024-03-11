@@ -1,3 +1,4 @@
+from   std/paths import Path
 from   std/sequtils import mapIt
 import std/tables
 import ../discovery
@@ -50,7 +51,7 @@ proc processTypeDecl(c: var Context; info: var TypeDeclNameInfo; decl: EnumDecl 
 
 proc assignNames*(api: AnalyzedApi; policy: var NamingPolicy): NameAssignment =
   var c = Context(policy: addr policy)
-  result.apiName = policy.fixIdent policy.renameModule api.name
+  result.rootResource = policy.fixIdent policy.renameResource api.name
   result.paramNames = c.processTypeDeclBody api.params.members
   # These arrays must not reallocate since we take addresses of their members.
   newSeq result.structNameInfos, api.structDecls.len
@@ -59,3 +60,47 @@ proc assignNames*(api: AnalyzedApi; policy: var NamingPolicy): NameAssignment =
     c.processTypeDecl result.structNameInfos[i], st
   for i, en in api.enumDecls:
     c.processTypeDecl result.enumNameInfos[i], en
+
+type TraverseContext = object
+  policy: ptr NamingPolicy
+  sep, path, packagePrefix: string
+
+proc traverseImpl(
+  c: var TraverseContext;
+  resources: openArray[Resource];
+  body: proc (path: Path; packagePrefix: string; resource: Resource);
+) {.effectsOf: body.} =
+  let pathCheckpoint = c.path.len
+  let packageCheckpoint = c.packagePrefix.len
+  for res in resources:
+    c.path &= '/'
+    c.path &= c.policy[].renameDirectory res.name
+    c.packagePrefix &= c.policy[].fixIdent c.policy[].renameResource res.name
+    c.packagePrefix &= c.sep
+    body c.path.Path, c.packagePrefix, res
+    c.traverseImpl res.children, body
+    c.path.setLen pathCheckpoint
+    c.packagePrefix.setLen packageCheckpoint
+
+proc traverse*(
+  resources: openArray[Resource];
+  root: sink Path;
+  packagePrefix: sink string;
+  policy: var NamingPolicy;
+  body: proc (path: Path; packagePrefix: string; resource: Resource);
+) {.effectsOf: body.} =
+  var c = TraverseContext(
+    policy: addr policy,
+    sep: policy.resourceSeparator,
+    path: root.string,
+    packagePrefix: packagePrefix,
+  )
+  c.traverseImpl resources, body
+
+proc traverse*(
+  resources: openArray[Resource];
+  root: sink Path;
+  policy: var NamingPolicy;
+  body: proc (path: Path; packagePrefix: string; resource: Resource);
+) {.effectsOf: body.} =
+  resources.traverse root, "", policy, body

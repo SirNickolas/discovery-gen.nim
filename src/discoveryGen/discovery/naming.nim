@@ -18,11 +18,17 @@ method renameEnumMember*(policy; name: string): string =
 method renameStructMember*(policy; name: string): string =
   name
 
-method renameModule*(policy; name: string): string =
+method resourceSeparator*(policy): string =
+  "."
+
+method renameResource*(policy; name: string): string =
   name
 
 method fixIdent*(policy; name: string): string =
   raiseAssert "Not implemented"
+
+method renameDirectory*(policy; name: string): string =
+  policy.fixIdent name
 
 method disambiguate*(policy; name: string; id: Natural): string =
   result = newStringOfCap name.len + 5
@@ -42,7 +48,7 @@ type
     memberNames*: seq[string]
 
   NameAssignment* = object
-    apiName*: string
+    rootResource*: string
     paramNames*: seq[string]
     enumNameInfos*: seq[TypeDeclNameInfo]
     structNameInfos*: seq[TypeDeclNameInfo]

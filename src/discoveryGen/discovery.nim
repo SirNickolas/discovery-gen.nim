@@ -103,7 +103,7 @@ type
     deprecated*: bool
     scopes*: seq[ScopeId]
 
-  Resource* = object
+  Resource* = ref object
     name*: string
     methods*: seq[Method]
     children*: seq[Resource]

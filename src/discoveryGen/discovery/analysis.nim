@@ -8,7 +8,7 @@ import std/tables
 import questionable
 import ../discovery
 from   ../private/plurals import singularize
-from   ../rawDiscovery import DiscoveryJsonSchema, DiscoveryRestDescription
+from   ../rawDiscovery import DiscoveryJsonSchema, DiscoveryOAuth2Scope, DiscoveryRestDescription
 
 export discovery
 
@@ -31,6 +31,7 @@ type
     enumRegistry: Table[(seq[string], seq[bool]), EnumId]
     structRegistry: Table[string, StructId]
     anonRegistry: Table[seq[BareStructMember], StructId]
+    scopeRegistry: Table[string, ScopeId]
     enumStats: seq[EnumStats]
     anonStats: seq[AnonStats]
     tmp: seq[(int, string)]
@@ -346,16 +347,14 @@ proc finalizeAnonStructDecl(c; st: var StructDecl; stats: AnonStats) =
 func isStructDecl(schema: DiscoveryJsonSchema): bool =
   schema.`type` == "object" and schema.additionalProperties.isNone
 
-func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
-  var c = Context(api: AnalyzedApi(name: raw.name), curStructId: StructId -1)
-  # Build the registry before processing anything.
-  c.structRegistry = initTable[string, StructId] raw.schemas.len
-  c.api.structDecls = collect newSeqOfCap(raw.schemas.len):
-    for name, schema in raw.schemas:
+proc registerStructs(c; schemas: OrderedTable[string, DiscoveryJsonSchema]) =
+  c.structRegistry = initTable[string, StructId] schemas.len
+  c.api.structDecls = collect newSeqOfCap(schemas.len):
+    for name, schema in schemas:
       if unlikely(not schema.isStructDecl):
         # A definition of a type alias. We will be expanding ("inlining") all aliases, discarding
         # their declared name and documentation in the process. Not perfect, yes.
-        c.aliases[name] = ({.cast(noSideEffect).}: addr raw.schemas.addr[][name])
+        c.aliases[name] = ({.cast(noSideEffect).}: addr schemas.addr[][name])
           #[
             This is a hack. Whenever we encounter a reference to this name, we will continue
             traversing the JSON graph (not a tree anymore) from this position. Essentially a symlink
@@ -370,6 +369,19 @@ func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
         header: TypeDeclHeader(names: @[name], hasCertainName: true),
         description: schema.description,
       )
+
+proc registerScopes(c; scopes: OrderedTable[string, DiscoveryOAuth2Scope]) =
+  newSeq c.api.scopeDecls, scopes.len
+  c.scopeRegistry = collect initTable(scopes.len):
+    for i, (name, scope) in enumerate scopes.pairs:
+      c.api.scopeDecls[i] = ScopeDecl(name: name, description: scope.description)
+      {name: i.ScopeId}
+
+func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
+  var c = Context(api: AnalyzedApi(name: raw.name), curStructId: StructId -1)
+  # Build the registries before processing anything.
+  c.registerStructs raw.schemas
+  c.registerScopes raw.auth.oauth2.scopes
 
   c.api.params = c.analyzeStructBody raw.parameters
   var id = 0

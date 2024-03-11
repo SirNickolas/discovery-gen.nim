@@ -19,6 +19,7 @@ type
   StructId*     = distinct int
   EnumId*       = distinct int
   EnumMemberId* = distinct int
+  ScopeId*      = distinct int
 
   ScalarType* = object
     pattern*: string
@@ -91,18 +92,36 @@ type
     members*: seq[EnumMember]
     memberDeprecations*: seq[bool] # Stored separately to save memory.
 
+  ScopeDecl* = object
+    name*, description*: string
+
+  Method* = object
+    name*, httpMethod*, description*: string
+    pathFragments*: seq[string]
+    parameters*: StructBody
+    request*, response*: StructId
+    deprecated*: bool
+    scopes*: seq[ScopeId]
+
+  Resource* = object
+    name*: string
+    methods*: seq[Method]
+    children*: seq[Resource]
+
   AnalyzedApi* = object
     name*: string
     usesJsonType*: bool
     params*: StructBody
     enumDecls*: seq[EnumDecl]
     structDecls*: seq[StructDecl]
-    # TODO: Methods.
-    # TODO: Resources.
+    scopeDecls*: seq[ScopeDecl]
+    methods*: seq[Method]
+    resources*: seq[Resource]
 
 func `==`*(a, b: StructId):     bool {.borrow.}
 func `==`*(a, b: EnumId):       bool {.borrow.}
 func `==`*(a, b: EnumMemberId): bool {.borrow.}
+func `==`*(a, b: ScopeId):      bool {.borrow.}
 
 func `==`*(a, b: ScalarType): bool =
   if (a.flags, a.kind, a.pattern) == (b.flags, b.kind, b.pattern):
@@ -155,6 +174,9 @@ template getStruct*(api: AnalyzedApi; id: StructId): StructDecl =
 
 template getEnum*(api: AnalyzedApi; id: EnumId): EnumDecl =
   api.enumDecls[id.int]
+
+template getScope*(api: AnalyzedApi; id: ScopeId): ScopeDecl =
+  api.scopeDecls[id.int]
 
 template getMember*(e: EnumDecl; id: EnumMemberId): EnumMember =
   e.members[id.int]

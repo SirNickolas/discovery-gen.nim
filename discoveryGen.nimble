@@ -9,7 +9,7 @@ requires(
   "jsony >= 1.1.0",
   "kdl >= 2.0.0",
   "questionable >= 0.10.0",
-  "sourcegens >= 0.1.4",
+  "sourcegens >= 0.1.5",
 )
 
 srcDir = "src"

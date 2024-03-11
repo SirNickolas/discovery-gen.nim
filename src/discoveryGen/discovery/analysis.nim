@@ -1,5 +1,6 @@
 from   std/algorithm import SortOrder, sort
 from   std/enumerate import enumerate
+from   std/parseutils as pu import nil
 from   std/sequtils import mapIt
 import std/strformat
 from   std/strutils as su import nil
@@ -8,7 +9,7 @@ import std/tables
 import questionable
 import ../discovery
 from   ../private/plurals import singularize
-from   ../rawDiscovery import DiscoveryJsonSchema, DiscoveryOAuth2Scope, DiscoveryRestDescription
+import ../rawDiscovery
 
 export discovery
 
@@ -308,11 +309,14 @@ proc analyzeStructBodyAux(c; props: OrderedTable[string, DiscoveryJsonSchema]): 
   End of mutually recursive group.
 ]#
 
-proc analyzeStructBody(c; props: OrderedTable[string, DiscoveryJsonSchema]): StructBody =
-  result = c.analyzeStructBodyAux props
-  result.members.sort do (a, b: StructMember) -> int:
+proc reorderStructMembers(members: var openArray[StructMember]) =
+  members.sort do (a, b: StructMember) -> int:
     # In a named struct, we reorder members as little as necessary for a better layout.
     cmp(a.bare.ty, b.bare.ty)
+
+proc analyzeStructBody(c; props: OrderedTable[string, DiscoveryJsonSchema]): StructBody =
+  result = c.analyzeStructBodyAux props
+  reorderStructMembers result.members
 
 proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string] =
   tmp.setLen 0
@@ -343,6 +347,59 @@ proc finalizeEnumDecl(c; en: var EnumDecl; stats: EnumStats) =
 proc finalizeAnonStructDecl(c; st: var StructDecl; stats: AnonStats) =
   c.finalizeTypeDeclHeader st.header, stats.names
   c.finalizeMemberDescriptions st.body.members, stats.descriptions
+
+func splitMethodPath(path: string): seq[string] =
+  var idx = 0
+  var fragment = ""
+  while (
+    idx += pu.parseUntil(path, fragment, '{', idx) + 1;
+    result &= fragment;
+    idx < path.len
+  ):
+    idx += pu.skipUntil(path, '}', idx)
+    idx += ord idx != path.len
+
+func analyzeMethodParameters(
+  c; props: OrderedTable[string, DiscoveryJsonSchema]; order: openArray[string];
+): StructBody =
+  result = c.analyzeStructBodyAux props
+  let posByName = collect initTable(order.len):
+    for i, name in order:
+      {name: i}
+  for i, m in result.members.mpairs:
+    while (let pos = posByName.getOrDefault(m.bare.name, i); pos != i):
+      swap m, result.members[pos]
+
+  reorderStructMembers result.members.toOpenArray(order.len, result.members.high)
+
+proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[Method] =
+  newSeq result, methods.len
+  for i, (name, m) in enumerate methods.pairs:
+    result[i] = Method(
+      name: name,
+      httpMethod: m.httpMethod,
+      description: m.description,
+      pathFragments: splitMethodPath m.path,
+      parameters: c.analyzeMethodParameters(m.parameters, m.parameterOrder),
+      request: if request =? m.request: c.structRegistry[request.`$ref`] else: StructId(-1),
+      response: c.structRegistry[m.response.`$ref`],
+      deprecated: m.deprecated,
+      scopes: m.scopes.mapIt c.scopeRegistry[it],
+    )
+
+proc analyzeResources(c; resources: Table[string, DiscoveryRestResource]): seq[Resource] =
+  result = collect newSeqOfCap(resources.len):
+    for name, res in resources:
+      if res.deprecated:
+        continue
+      Resource(
+        name: name,
+        methods: c.analyzeMethods res.methods,
+        children: c.analyzeResources res.resources,
+      )
+
+  result.sort do (a, b: Resource) -> int:
+    cmp(a.name, b.name)
 
 func isStructDecl(schema: DiscoveryJsonSchema): bool =
   schema.`type` == "object" and schema.additionalProperties.isNone
@@ -390,6 +447,9 @@ func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
       c.curStructId = id.StructId
       c.api.structDecls[id].body = c.analyzeStructBody schema.properties
       id += 1
+
+  c.api.methods = c.analyzeMethods raw.methods
+  c.api.resources = c.analyzeResources raw.resources
 
   for enumId, stats in c.enumStats:
     c.finalizeEnumDecl c.api.enumDecls[enumId], stats

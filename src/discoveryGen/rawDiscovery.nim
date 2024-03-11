@@ -156,7 +156,7 @@ type
       ## Supplementary to the `path` property.
     httpMethod*: string
       ## HTTP method used by this method.
-    request*: DiscoveryRequest
+    request*: Option[DiscoveryRequest]
       ## The schema for the request.
     response*: DiscoveryResponse
       ## The schema for the response.

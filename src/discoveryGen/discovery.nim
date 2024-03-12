@@ -4,9 +4,15 @@ type
   # https://developers.google.com/discovery/v1/type-format
   ScalarTypeKind* = enum
     stkJson, stkBool, stkF32, stkF64, stkI32, stkU32, stkI64, stkU64,
-    stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask,
+    stkDate, stkDateTime, stkDuration, stkString, stkFieldMask, stkBase64,
     stkEnum, stkStruct
 
+const
+  stkSomeFloat* = {stkF32, stkF64}
+  stkSomeInteger* = {stkI32 .. stkU64}
+  # stkSomeString* = {stkI64 .. stkEnum}
+
+type
   ScalarTypeFlag* = enum
     stfHasPattern
     stfHasDefault
@@ -41,7 +47,7 @@ type
       defaultI64*: int64
     of stkU64:
       defaultU64*: uint64
-    of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask:
+    of stkDate, stkDateTime, stkDuration, stkString, stkFieldMask, stkBase64:
       defaultString*: string
     of stkEnum: # Always `hasDefault`.
       enumId*: EnumId
@@ -144,7 +150,7 @@ func `==`*(a, b: ScalarType): bool =
         a.defaultI64 == b.defaultI64
       of stkU64:
         a.defaultU64 == b.defaultU64
-      of stkString, stkBase64, stkDate, stkDateTime, stkDuration, stkFieldMask:
+      of stkDate, stkDateTime, stkDuration, stkString, stkFieldMask, stkBase64:
         a.defaultString == b.defaultString
       of stkEnum:
         (a.enumId, a.defaultMember) == (b.enumId, b.defaultMember)

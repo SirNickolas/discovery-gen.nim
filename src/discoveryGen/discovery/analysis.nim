@@ -111,11 +111,11 @@ func parseStringFormat(format: ?string): ScalarTypeKind =
     case format
     of "int64": stkI64
     of "uint64": stkU64
-    of "byte": stkBase64
     of "date": stkDate
     of "date-time", "google-datetime": stkDateTime
     of "google-duration": stkDuration
     of "google-fieldmask": stkFieldMask
+    of "byte": stkBase64
     else: raiseUnknownFormat format, ty = "string"
   else:
     stkString

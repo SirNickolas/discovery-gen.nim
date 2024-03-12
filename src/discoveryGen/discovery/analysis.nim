@@ -148,7 +148,7 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
     var members = newSeq[EnumMember] names.len
     let byName = collect initTable(names.len):
       for i, name in names:
-        members[i].bare = (name, )
+        members[i].bare.name = name
         {name: i.EnumMemberId}
     c.api.enumDecls &= EnumDecl(
       header: TypeDeclHeader(hasInferredName: true),
@@ -301,7 +301,7 @@ proc analyzeStructBodyAux(c; props: OrderedTable[string, DiscoveryJsonSchema]): 
     result.allMemberFlags = result.allMemberFlags * ty.scalar.flags
     result.anyMemberFlags = result.anyMemberFlags + ty.scalar.flags
     result.members[i] = StructMember(
-      bare: (move c.curMemberName, ty),
+      bare: BareStructMember(name: move c.curMemberName, ty: ty),
       descriptions: if description.len != 0: @[description] else: @[],
     )
   c.curMemberName = prevMemberName
@@ -359,10 +359,16 @@ func splitMethodPath(path: string): seq[string] =
     idx += pu.skipUntil(path, '}', idx)
     idx += ord idx != path.len
 
+func aggregateMemberFlags(members: openArray[StructMember]): tuple[all, any: set[ScalarTypeFlag]] =
+  result.all = {ScalarTypeFlag.low .. ScalarTypeFlag.high}
+  for m in members:
+    result.all = result.all * m.bare.ty.scalar.flags
+    result.any = result.any + m.bare.ty.scalar.flags
+
 func analyzeMethodParameters(
   c; props: OrderedTable[string, DiscoveryJsonSchema]; order: openArray[string];
-): StructBody =
-  result = c.analyzeStructBodyAux props
+): (seq[StructMember], StructBody) =
+  var body = c.analyzeStructBodyAux props
   # Put positional parameters at the end.
   let
     firstPositional = props.len - order.len
@@ -370,21 +376,30 @@ func analyzeMethodParameters(
       for i, name in order:
         {name: firstPositional + i}
 
-  for i, m in result.members.mpairs:
+  for i, m in body.members.mpairs:
     while (let pos = posByName.getOrDefault(m.bare.name, i); pos != i):
-      swap m, result.members[pos]
+      swap m, body.members[pos]
 
-  reorderStructMembers result.members.toOpenArray(0, firstPositional - 1)
+  var required = newSeq[StructMember] order.len
+  for i, m in body.members.toOpenArray(firstPositional, props.len - 1).mpairs:
+    required[i] = move m
+
+  body.members.setLen firstPositional
+  (body.allMemberFlags, body.anyMemberFlags) = aggregateMemberFlags body.members
+  reorderStructMembers body.members
+  (required, body)
 
 proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[Method] =
   newSeq result, methods.len
   for i, (name, m) in enumerate methods.pairs:
+    var (requiredParams, params) = c.analyzeMethodParameters(m.parameters, m.parameterOrder)
     result[i] = Method(
       name: name,
       httpMethod: m.httpMethod,
       description: m.description,
       pathFragments: splitMethodPath m.path,
-      parameters: c.analyzeMethodParameters(m.parameters, m.parameterOrder),
+      requiredParams: requiredParams,
+      params: params,
       request: if request =? m.request: c.structRegistry[request.`$ref`] else: StructId(-1),
       response: c.structRegistry[m.response.`$ref`],
       deprecated: m.deprecated,

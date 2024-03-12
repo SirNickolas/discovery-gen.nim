@@ -484,8 +484,7 @@ proc emitMethodDecl(e; api; names; m: Method) =
   e.emit &"  alias Response = t.{names.getStructInfo(m.response).header.name}; ///\p"
   e.endSection
 
-  e.emitStructBody api, names, m.parameters:
-    m.parameters.members.mapIt it.bare.name.convertStyle camelCase
+  e.emitStructBody api, names, m.params, m.params.members.mapIt it.bare.name.convertStyle camelCase
   e.emit "}\p"
 
 func initMethodsCodegen(c; settings; packagePrefix: string; res: Resource): Codegen =

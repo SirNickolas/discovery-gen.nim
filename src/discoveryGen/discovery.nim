@@ -61,18 +61,19 @@ type
     containers*: seq[ContainerKind]
     scalar*: ScalarType
 
-  BareStructMember* = tuple
-    name: string
-    ty: Type
+  BareStructMember* = object
+    name*: string
+    ty*: Type
 
-  BareEnumMember* = tuple[name: string]
+  BareEnumMember* = object
+    name*: string
 
   AggregateMember*[B] = object
     bare*: B
     descriptions*: seq[string]
 
-  EnumMember*   = AggregateMember[BareEnumMember]
   StructMember* = AggregateMember[BareStructMember]
+  EnumMember*   = AggregateMember[BareEnumMember]
 
   TypeDeclHeader* = object
     names*: seq[string]
@@ -98,7 +99,8 @@ type
   Method* = object
     name*, httpMethod*, description*: string
     pathFragments*: seq[string]
-    parameters*: StructBody
+    requiredParams*: seq[StructMember]
+    params*: StructBody
     request*, response*: StructId
     deprecated*: bool
     scopes*: seq[ScopeId]

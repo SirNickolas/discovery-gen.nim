@@ -289,7 +289,7 @@ type MemberTypeAlias = object
 func getMemberTypeName(memberName: string; ty: Type): string =
   (if ty.containers.len == 0: memberName else: memberName.singularize).convertStyle(pascalCase)
 
-proc emitMemberType(e; api: AnalyzedApi; names; memberName: string; ty: Type):
+proc emitMemberType(e; api; names; tyNamespace: string; memberName: string; ty: Type):
     MemberTypeAlias =
   if ty.needsNullable:
     e.emit "Nullable!"
@@ -312,15 +312,17 @@ proc emitMemberType(e; api: AnalyzedApi; names; memberName: string; ty: Type):
     of stkStruct:
       let header = addr api.getStruct(ty.scalar.structId).header
       let info = addr names.getStructInfo(ty.scalar.structId).header
+      var s = tyNamespace
       if header.hasInferredName:
         result.tyInfo = info
         result.hidden = header[].isHiddenType info[]
         result.name = getMemberTypeName(memberName, ty)
-        result.name # No need to check `circular`.
-      elif not ty.scalar.circular:
-        info.name
+        s &= result.name # No need to check `circular`.
       else:
-        info.name & '*'
+        s &= info.name
+        if ty.scalar.circular:
+          s &= '*'
+      s
   for i in countDown(ty.containers.high, 0):
     e.emit:
       case ty.containers[i]
@@ -360,11 +362,13 @@ proc emitDefaultVal(e; names; scalar: ScalarType; alias: MemberTypeAlias) =
       e.emit &" = {alias.name}.{memberName}"
   of stkJson, stkStruct: discard
 
-proc emitMemberTypeAlias(e; alias: MemberTypeAlias) =
-  let namespace = if alias.hidden: "_P" else: ""
-  e.emit &"alias {alias.name} = {namespace}.{alias.tyInfo.name}; /// ditto\p"
+proc emitMemberTypeAlias(e; tyNamespace: string; alias: MemberTypeAlias) =
+  let namespace = if alias.hidden: "P." elif tyNamespace.len != 0: tyNamespace else: "."
+  e.emit &"alias {alias.name} = {namespace}{alias.tyInfo.name}; /// ditto\p"
 
-proc emitStructBody(e; api; names; body: StructBody; memberNames: openArray[string]) =
+proc emitStructBody(
+  e; api; names; tyNamespace: string; body: StructBody; memberNames: openArray[string];
+) =
   var ctx = initStructBodyContext(body, memberNames)
   if ctx.implicitOptional:
     e.emit if udaOptional in ctx.forbidden: "@(.optional):\p" else: "@optional:\p"
@@ -374,20 +378,20 @@ proc emitStructBody(e; api; names; body: StructBody; memberNames: openArray[stri
     let memberName = memberNames[memberId]
     e.emitAltDocs m.descriptions
     e.emitMemberUdas ctx, memberId, m.bare, memberNames
-    let alias = e.emitMemberType(api, names, memberName, m.bare.ty)
+    let alias = e.emitMemberType(api, names, tyNamespace, memberName, m.bare.ty)
     e.emit &" {memberName}"
     if stfHasDefault in m.bare.ty.scalar.flags and m.bare.ty.containers.len == 0:
       e.emitDefaultVal names, m.bare.ty.scalar, alias
     e.emit ";\p"
     if alias.tyInfo != nil:
-      e.emitMemberTypeAlias alias
+      e.emitMemberTypeAlias(tyNamespace, alias)
 
   e.dedent
 
 proc emitStructDecl(e; api; names; st: StructDecl; info: TypeDeclNameInfo) =
   e.emitDocComment st.description
   e.emit &"struct {info.header.name} {{\p"
-  e.emitStructBody api, names, st.body, info.memberNames
+  e.emitStructBody api, names, "", st.body, info.memberNames
   e.emit "}\p"
 
 proc emitEnumDecls(e; api; names; hidden: bool) =
@@ -428,7 +432,7 @@ func initTypesCodegen(c; settings): Codegen =
       e.endSection
 
     "hiddenNamespaceHeader":
-      e.emit "///\ppackage struct _P {\p"
+      e.emit "///\ppackage struct P {\p"
       e.indent
 
     "hiddenEnums":
@@ -450,7 +454,7 @@ func initTypesCodegen(c; settings): Codegen =
 
     "commonParameters":
       e.emit "///\pstruct CommonParameters {\p"
-      e.emitStructBody c.api, settings.names, c.api.params, settings.names.paramNames
+      e.emitStructBody c.api, settings.names, "", c.api.params, settings.names.paramNames
       e.emit "}\p"
       e.endSection
 
@@ -484,7 +488,8 @@ proc emitMethodDecl(e; api; names; m: Method) =
   e.emit &"  alias Response = t.{names.getStructInfo(m.response).header.name}; ///\p"
   e.endSection
 
-  e.emitStructBody api, names, m.params, m.params.members.mapIt it.bare.name.convertStyle camelCase
+  e.emitStructBody api, names, "t.", m.params:
+    m.params.members.mapIt it.bare.name.convertStyle camelCase
   e.emit "}\p"
 
 func initMethodsCodegen(c; settings; packagePrefix: string; res: Resource): Codegen =

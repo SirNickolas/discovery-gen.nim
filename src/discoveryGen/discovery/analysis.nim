@@ -370,37 +370,38 @@ func aggregateMemberFlags(members: openArray[StructMember]): tuple[all, any: set
 func analyzeMethodParameters(
   c; props: OrderedTable[string, DiscoveryJsonSchema]; order: openArray[string];
 ): (seq[StructMember], StructBody) =
-  var body = c.analyzeStructBodyAux props
-  # Put positional parameters at the end.
-  let
-    firstPositional = props.len - order.len
-    posByName = collect initTable(order.len):
-      for i, name in order:
-        {name: firstPositional + i}
+  let posByName = collect initTable(order.len):
+    for i, name in order:
+      {name: i}
+  var
+    body = c.analyzeStructBodyAux props
+    positional = newSeq[StructMember] order.len
+    i = 0
+    n = props.len
+  while i != n:
+    if (let pos = posByName.getOrDefault(body.members[i].bare.name, -1); pos >= 0):
+      n -= 1
+      positional[pos] = move body.members[i]
+      body.members[i] = move body.members[n]
+    else:
+      i += 1
 
-  for i, m in body.members.mpairs:
-    while (let pos = posByName.getOrDefault(m.bare.name, i); pos != i):
-      swap m, body.members[pos]
-
-  var required = newSeq[StructMember] order.len
-  for i, m in body.members.toOpenArray(firstPositional, props.len - 1).mpairs:
-    required[i] = move m
-
-  body.members.setLen firstPositional
+  assert n == props.len - order.len
+  body.members.setLen n
   (body.allMemberFlags, body.anyMemberFlags) = aggregateMemberFlags body.members
   reorderStructMembers body.members
-  (required, body)
+  (positional, body)
 
 proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[Method] =
   newSeq result, methods.len
   for i, (name, m) in enumerate methods.pairs:
-    var (requiredParams, params) = c.analyzeMethodParameters(m.parameters, m.parameterOrder)
+    var (positionalParams, params) = c.analyzeMethodParameters(m.parameters, m.parameterOrder)
     result[i] = Method(
       name: name,
       httpMethod: m.httpMethod,
       description: m.description,
       pathFragments: splitMethodPath m.path,
-      requiredParams: requiredParams,
+      positionalParams: positionalParams,
       params: params,
       request: if request =? m.request: c.structRegistry[request.`$ref`] else: StructId(-1),
       response: c.structRegistry[m.response.`$ref`],

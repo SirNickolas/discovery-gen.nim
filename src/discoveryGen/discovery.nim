@@ -99,7 +99,7 @@ type
   Method* = object
     name*, httpMethod*, description*: string
     pathFragments*: seq[string]
-    requiredParams*: seq[StructMember]
+    positionalParams*: seq[StructMember]
     params*: StructBody
     request*, response*: StructId
     deprecated*: bool

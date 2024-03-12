@@ -363,14 +363,18 @@ func analyzeMethodParameters(
   c; props: OrderedTable[string, DiscoveryJsonSchema]; order: openArray[string];
 ): StructBody =
   result = c.analyzeStructBodyAux props
-  let posByName = collect initTable(order.len):
-    for i, name in order:
-      {name: i}
+  # Put positional parameters at the end.
+  let
+    firstPositional = props.len - order.len
+    posByName = collect initTable(order.len):
+      for i, name in order:
+        {name: firstPositional + i}
+
   for i, m in result.members.mpairs:
     while (let pos = posByName.getOrDefault(m.bare.name, i); pos != i):
       swap m, result.members[pos]
 
-  reorderStructMembers result.members.toOpenArray(order.len, result.members.high)
+  reorderStructMembers result.members.toOpenArray(0, firstPositional - 1)
 
 proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[Method] =
   newSeq result, methods.len

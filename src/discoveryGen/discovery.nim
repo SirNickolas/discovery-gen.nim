@@ -112,7 +112,7 @@ type
 
   AnalyzedApi* = object
     name*: string
-    usesJsonType*: bool
+    usedTypes*: set[ScalarTypeKind]
     params*: StructBody
     enumDecls*: seq[EnumDecl]
     structDecls*: seq[StructDecl]

@@ -228,7 +228,6 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
         if def =? member.default:
           raiseInvalidValue def, ty = "any"
         result.scalar = ScalarType(flags: {stfHasDefault}, kind: stkJson)
-        c.api.usesJsonType = true
         break
       of "boolean":
         result.scalar = parseBooleanType member.default
@@ -281,6 +280,7 @@ proc analyzeTypeAux(c; member: DiscoveryJsonSchema): Type =
 
 proc analyzeMemberType(c; member: DiscoveryJsonSchema): tuple[ty: Type; description: string] =
   var ty = c.analyzeTypeAux member
+  c.api.usedTypes.incl ty.scalar.kind
   if member.required:
     if ty.scalar.kind == stkStruct:
       raise DiscoveryAnalysisError.newException "Unsupported required parameter of type \"object\""

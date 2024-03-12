@@ -416,7 +416,7 @@ func initTypesCodegen(c; settings): Codegen =
 
     "publicImports":
       e.emit "public import std.typecons: Nullable, apply, nullable; ///\p"
-      if c.api.usesJsonType:
+      if stkJson in c.api.usedTypes:
         e.emit "public import vibe.data.json: JSONException, Json; ///\p"
       e.endSection
 

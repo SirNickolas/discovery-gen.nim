@@ -33,7 +33,7 @@ type
     case kind*: ScalarTypeKind
     of stkJson: # Always `hasDefault`.
       discard
-    of stkBool: # Always `hasDefault`.
+    of stkBool:
       defaultBool*: bool
     of stkF32: # Always `hasDefault`.
       defaultF32*: float32

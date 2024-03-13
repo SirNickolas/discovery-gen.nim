@@ -128,7 +128,9 @@ func isHiddenType(header: TypeDeclHeader; info: TypeDeclHeaderNameInfo): bool =
   header.hasInferredName and (not header.hasCertainName or info.ambiguous or info.name.len <= 5)
 
 func needsNullable(ty: Type): bool =
-  ty.scalar.flags * {stfHasDefault, stfRequired} == { } and ty.containers.len == 0
+  ty.scalar.flags * {stfHasDefault, stfRequired} == { } and
+  ty.scalar.kind != stkBool and
+  ty.containers.len == 0
 
 template formatEitherInteger(kind: ScalarTypeKind; i32: int32; u32: uint32): string =
   if kind == stkI32:
@@ -304,7 +306,9 @@ proc emitMemberType(e; api; names; tyNamespace: string; memberName: string; ty: 
   e.emit:
     case ty.scalar.kind
     of stkJson: "Json"
-    of stkBool: "bool"
+    of stkBool:
+      if stfHasDefault in ty.scalar.flags: "bool"
+      else: "Ternary"
     of stkF32: "float"
     of stkF64: "double"
     of stkI32: "int"
@@ -427,7 +431,7 @@ func initRootTypesCodegen(c; settings): Codegen =
       e.endSection
 
     "publicImports":
-      e.emit "public import std.typecons: Nullable, apply, nullable; ///\p"
+      e.emit "public import std.typecons: Nullable, Ternary, apply, nullable; ///\p"
       if stkJson in c.api.usedTypes:
         e.emit "public import vibe.data.json: JSONException, Json; ///\p"
       e.endSection
@@ -510,7 +514,10 @@ proc emitMemberUrlSerializationHeader(e; api; names; m: StructMember; name, tyNa
   else:
     let (prefix, suffix) = case ty.scalar.kind:
       of stkBool:
-        ((if ty.scalar.defaultBool: "!" else: ""), "")
+        if stfHasDefault in ty.scalar.flags:
+          ((if ty.scalar.defaultBool: "!" else: ""), "")
+        else:
+          ("", " != Ternary.unknown")
       of stkF32, stkF64:
         ("!", ".isNaN")
       of stkI32:
@@ -567,18 +574,22 @@ proc emitUrlSerializer(
     e.emit " {\p"
     let assignment = case m.bare.ty.scalar.kind:
       of stkBool:
-        if m.bare.ty.scalar.defaultBool: "=false" else: "=true"
+        if stfHasDefault not_in m.bare.ty.scalar.flags: "="
+        elif m.bare.ty.scalar.defaultBool: "=false"
+        else: "=true"
       of stkEnum:
         let en = api.getEnum m.bare.ty.scalar.enumId
         if en.members.len != 2:
           "="
         else:
-          '=' & en.members[1 - m.bare.ty.scalar.defaultMember.int].bare.name
+          '=' & en.members[m.bare.ty.scalar.defaultMember.int xor 0x1].bare.name
       else:
         "="
     e.emit &" b ~= s;\p b ~= {Quoted m.bare.name & assignment};\p"
     if assignment.len == 1:
       case m.bare.ty.scalar.kind
+      of stkBool:
+        e.emit &" b ~= boolMemberNames[{v} != Ternary.no];\p"
       of stkI32, stkU32, stkI64, stkU64:
         e.emit &" put(b.sink, {v}.toChars);\p"
       of stkF32, stkF64:
@@ -621,6 +632,8 @@ func initRootSerializationCodegen(c; settings): Codegen =
         e.emit "import std.conv: toChars;\p"
       if c.api.usedTypes * stkSomeFloat != { }:
         e.emit "import std.math.traits: isNaN;\p"
+      if stkBool in c.api.usedTypes:
+        e.emit "import std.typecons: Ternary;\p"
       if c.api.usedTypes * (stkSomeFloat + {stkDate .. stkBase64}) != { }:
         e.emit "import vibe.data.json: serializeToJsonString;\p"
       e.emit fmt do:
@@ -698,7 +711,7 @@ func initMethodsCodegen(c; settings; packagePrefix: string; res: Resource): Code
       e.endSection
 
     "publicImports":
-      e.emit "public import std.typecons: Nullable, apply, nullable; ///\p"
+      e.emit "public import std.typecons: Nullable, Ternary, apply, nullable; ///\p"
       e.endSection
 
     "imports":

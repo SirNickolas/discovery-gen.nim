@@ -59,12 +59,13 @@ func raiseMissingField(field, ty: string) {.noReturn, noInline.} =
   raise MissingFieldError.newException &"Missing \"{field}\" for type \"{ty}\""
 
 func parseBooleanType(def: ?string): ScalarType =
-  result = ScalarType(flags: {stfHasDefault}, kind: stkBool)
+  result = ScalarType(kind: stkBool)
   if def =? def:
-    case def
-    of "false": discard
-    of "true": result.defaultBool = true
-    else: raiseInvalidValue def, ty = "boolean"
+    result.flags.incl stfHasDefault
+    case def:
+      of "true": result.defaultBool = true
+      of "false": discard
+      else: raiseInvalidValue def, ty = "boolean"
 
 proc parseIntegerField[T: int32 | uint32](
   destField: var T; val: ?string; destFlags: var set[ScalarTypeFlag]; flag: ScalarTypeFlag;

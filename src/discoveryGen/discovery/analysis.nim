@@ -385,7 +385,7 @@ func aggregateMemberFlags(members: openArray[StructMember]): tuple[all, any: set
     result.all = result.all * m.bare.ty.scalar.flags
     result.any = result.any + m.bare.ty.scalar.flags
 
-func analyzeMethodParameters(
+proc analyzeMethodParameters(
   c; props: OrderedTable[string, DiscoveryJsonSchema]; order: openArray[string];
 ): (seq[StructMember], StructBody) =
   let posByName = collect initTable(order.len):
@@ -410,10 +410,46 @@ func analyzeMethodParameters(
   reorderStructMembers body.members
   (positional, body)
 
+#
+# Start of a mutually recursive group.
+#
+proc markTypeDecls(api: var AnalyzedApi; id: StructId; flag: TypeDeclFlag)
+  {.raises: [], tags: [], noSideEffect.}
+
+proc markTypeDecls(api: var AnalyzedApi; members: openArray[StructMember]; flag: TypeDeclFlag) =
+  for m in members:
+    case m.bare.ty.scalar.kind
+    of stkEnum:
+      api.getEnum(m.bare.ty.scalar.enumId).header.flags.incl flag
+    of stkStruct:
+      api.markTypeDecls m.bare.ty.scalar.structId, flag
+    else: discard
+
+proc markTypeDecls(api: var AnalyzedApi; id: StructId; flag: TypeDeclFlag) =
+  if flag not_in api.getStruct(id).header.flags:
+    api.getStruct(id).header.flags.incl flag
+    api.markTypeDecls api.getStruct(id).body.members, flag
+#
+# End of the mutually recursive group.
+#
+
 proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[Method] =
   newSeq result, methods.len
   for i, (name, m) in enumerate methods.pairs:
-    var (positionalParams, params) = c.analyzeMethodParameters(m.parameters, m.parameterOrder)
+    let
+      (positionalParams, params) = c.analyzeMethodParameters(m.parameters, m.parameterOrder)
+      requestId =
+        if request =? m.request:
+          let requestId = c.structRegistry[request.`$ref`]
+          c.api.markTypeDecls requestId, tdfUsedInRequest
+          requestId
+        else:
+          StructId(-1)
+      responseId = c.structRegistry[m.response.`$ref`]
+    c.api.markTypeDecls positionalParams, tdfUsedInRequest
+    c.api.markTypeDecls params.members, tdfUsedInRequest
+    c.api.markTypeDecls responseId, tdfUsedInResponse
+
     result[i] = Method(
       name: name,
       httpMethod: m.httpMethod,
@@ -421,8 +457,8 @@ proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[
       pathFragments: splitMethodPath m.path,
       positionalParams: positionalParams,
       params: params,
-      requestId: if request =? m.request: c.structRegistry[request.`$ref`] else: StructId(-1),
-      responseId: c.structRegistry[m.response.`$ref`],
+      requestId: requestId,
+      responseId: responseId,
       deprecated: m.deprecated,
       scopes: m.scopes.mapIt c.scopeRegistry[it],
     )
@@ -493,6 +529,7 @@ func analyze*(raw: DiscoveryRestDescription): AnalyzedApi =
       c.api.structDecls[id].body = c.analyzeStructBody schema.properties
       id += 1
 
+  c.api.markTypeDecls c.api.params.members, tdfUsedInRequest
   c.api.methods = c.analyzeMethods raw.methods
   c.api.resources = c.analyzeResources raw.resources
 

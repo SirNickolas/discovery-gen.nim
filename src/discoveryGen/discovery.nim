@@ -84,6 +84,8 @@ type
   TypeDeclFlag* = enum
     tdfHasInferredName
     tdfHasCertainName
+    tdfUsedInRequest
+    tdfUsedInResponse
 
   TypeDeclHeader* = object
     names*: seq[string]

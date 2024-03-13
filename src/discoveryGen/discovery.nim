@@ -81,9 +81,13 @@ type
   StructMember* = AggregateMember[BareStructMember]
   EnumMember*   = AggregateMember[BareEnumMember]
 
+  TypeDeclFlag* = enum
+    tdfHasInferredName
+    tdfHasCertainName
+
   TypeDeclHeader* = object
     names*: seq[string]
-    hasInferredName*, hasCertainName*: bool
+    flags*: set[TypeDeclFlag]
 
   StructBody* = object
     members*: seq[StructMember]
@@ -107,7 +111,7 @@ type
     pathFragments*: seq[string]
     positionalParams*: seq[StructMember]
     params*: StructBody
-    request*, response*: StructId
+    requestId*, responseId*: StructId
     deprecated*: bool
     scopes*: seq[ScopeId]
 

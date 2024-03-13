@@ -47,7 +47,7 @@ proc assignDisambiguationId(c: var Context; header: var TypeDeclHeaderNameInfo; 
 proc processTypeDecl(c: var Context; info: var TypeDeclNameInfo; decl: EnumDecl | StructDecl) =
   info.header.name = c.policy[].fixIdent c.renameTypeDecl decl
   info.memberNames = c.processTypeDeclBody decl.members
-  c.assignDisambiguationId info.header, not decl.header.hasInferredName
+  c.assignDisambiguationId info.header, tdfHasInferredName not_in decl.header.flags
 
 proc assignNames*(api: AnalyzedApi; policy: var NamingPolicy): NameAssignment =
   var c = Context(policy: addr policy)

@@ -75,7 +75,7 @@ proc registerStructs(c; schemas: OrderedTable[string, DiscoveryJsonSchema]) =
 
       c.structRegistry[name] = c.structRegistry.len.StructId
       StructDecl(
-        header: TypeDeclHeader(names: @[name], hasCertainName: true),
+        header: TypeDeclHeader(names: @[name], flags: {tdfHasCertainName}),
         description: schema.description,
       )
 
@@ -193,7 +193,7 @@ proc registerEnumType(c; names, descriptions: seq[string]; deprecated: seq[bool]
         members[i].bare.name = name
         {name: i.EnumMemberId}
     c.api.enumDecls &= EnumDecl(
-      header: TypeDeclHeader(hasInferredName: true),
+      header: TypeDeclHeader(flags: {tdfHasInferredName}),
       members: members,
       memberDeprecations: deprecated,
     )
@@ -222,7 +222,7 @@ proc registerAnonStructType(c; body: sink StructBody): StructId =
     for i, member in body.members.mpairs:
       descriptions[i] = toCountTable move member.descriptions
     c.anonStats &= AnonStats(descriptions: descriptions)
-    c.api.structDecls &= StructDecl(header: TypeDeclHeader(hasInferredName: true), body: body)
+    c.api.structDecls &= StructDecl(header: TypeDeclHeader(flags: {tdfHasInferredName}), body: body)
   else:
     for i, t in c.anonStats[anonId].descriptions.mpairs:
       if body.members[i].descriptions.len != 0:
@@ -421,8 +421,8 @@ proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[
       pathFragments: splitMethodPath m.path,
       positionalParams: positionalParams,
       params: params,
-      request: if request =? m.request: c.structRegistry[request.`$ref`] else: StructId(-1),
-      response: c.structRegistry[m.response.`$ref`],
+      requestId: if request =? m.request: c.structRegistry[request.`$ref`] else: StructId(-1),
+      responseId: c.structRegistry[m.response.`$ref`],
       deprecated: m.deprecated,
       scopes: m.scopes.mapIt c.scopeRegistry[it],
     )
@@ -459,7 +459,7 @@ proc sortKeysVia(t: CountTable[string]; tmp: var seq[(int, string)]): seq[string
 proc finalizeTypeDeclHeader(c; header: var TypeDeclHeader; names: CountTable[string]) =
   header.names = names.sortKeysVia c.tmp
   if c.tmp.len == 1 or c.tmp[0][0] != c.tmp[1][0]: # If we have a clear leader.
-    header.hasCertainName = true
+    header.flags.incl tdfHasCertainName
 
 proc finalizeMemberDescriptions(
   c; members: var openArray[AggregateMember]; descriptionsTables: openArray[CountTable[string]];

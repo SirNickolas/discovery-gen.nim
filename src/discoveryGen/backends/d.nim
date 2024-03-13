@@ -125,7 +125,9 @@ method fixIdent*(policy; name: string): string =
   name.fixIdent
 
 func isHiddenType(header: TypeDeclHeader; info: TypeDeclHeaderNameInfo): bool =
-  header.hasInferredName and (not header.hasCertainName or info.ambiguous or info.name.len <= 5)
+  tdfHasInferredName in header.flags and (
+    tdfHasCertainName not_in header.flags or info.ambiguous or info.name.len <= 5
+  )
 
 func needsNullable(ty: Type): bool =
   ty.scalar.flags * {stfHasDefault, stfRequired} == { } and
@@ -325,7 +327,7 @@ proc emitMemberType(e; api; names; tyNamespace: string; memberName: string; ty: 
       let header = addr api.getStruct(ty.scalar.structId).header
       let info = addr names.getStructInfo(ty.scalar.structId).header
       var s = tyNamespace
-      if header.hasInferredName:
+      if tdfHasInferredName in header.flags:
         result.tyInfo = info
         result.hidden = header[].isHiddenType info[]
         result.name = getMemberTypeName(memberName, ty)
@@ -505,7 +507,9 @@ proc emitMemberUrlSerializationHeader(e; api; names; m: StructMember; name, tyNa
     (string, bool) =
   let ty = m.bare.ty
   if ty.containers.len != 0:
-    # TODO: Validate it's a 1-dimensional array.
+    # TODO: Validate.
+    assert ty.containers.len == 1
+    assert ty.containers[0] == ckArray
     e.emit &"foreach (v; p.{name})"
     ("v", false)
   elif ty.needsNullable:
@@ -687,9 +691,9 @@ proc emitMethodDecl(e; api; names; m: Method) =
     enum restHttpMethod = HttpMethod.{m.httpMethod.translateHttpMethod}; ///
     enum restPath = [{restPath}]; ///
   """
-  if m.request.int >= 0:
-    e.emit &"  alias Request = t.{names.getStructInfo(m.request).header.name}; ///\p"
-  e.emit &"  alias Response = t.{names.getStructInfo(m.response).header.name}; ///\p"
+  if m.requestId.int >= 0:
+    e.emit &"  alias Request = t.{names.getStructInfo(m.requestId).header.name}; ///\p"
+  e.emit &"  alias Response = t.{names.getStructInfo(m.responseId).header.name}; ///\p"
   e.endSection
 
   e.emitStructBody api, names, "t.", m.params:

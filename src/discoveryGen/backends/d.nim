@@ -503,9 +503,46 @@ proc emitEnumMemberNames(e; api; names) =
     let ty = qualifyTypeName(en.header, info.header, "")
     e.emit &"string[{en.members.len}] enumMemberNames(_: {ty}) = [{s}];\p"
 
-proc emitMemberUrlSerializationHeader(e; api; names; m: StructMember; name, tyNamespace: string):
+func getCheckAgainstDefault(api; names; scalar: ScalarType; tyNamespace: string): (string, string) =
+  case scalar.kind
+  of stkJson:
+    result = ("!", ".isUndefined")
+  of stkBool:
+    if scalar.defaultBool:
+      result[0] = "!"
+    elif stfHasDefault not_in scalar.flags:
+      result[1] = " != Ternary.unknown"
+  of stkF32, stkF64:
+    result = ("!", ".isNaN")
+  of stkI32:
+    if scalar.defaultI32 != 0:
+      result[1] = &" != {scalar.defaultI32}"
+  of stkU32:
+    if scalar.defaultU32 != 0:
+      result[1] = &" != {scalar.defaultU32}u"
+  of stkI64:
+    if scalar.defaultI64 != 0:
+      result[1] = &" != {scalar.defaultI64}"
+  of stkU64:
+    if scalar.defaultU64 != 0:
+      result[1] = &" != {scalar.defaultU64}u"
+  of stkDate, stkDateTime, stkDuration, stkString, stkFieldMask, stkBase64:
+    result[1] =
+      if scalar.defaultString.len == 0:
+        ".length"
+      else:
+        &" != {Quoted scalar.defaultString}"
+  of stkEnum:
+    if scalar.defaultMember.int != 0:
+      let
+        info = names.getEnumInfo(scalar.enumId)
+        tyName = qualifyTypeName(api.getEnum(scalar.enumId).header, info.header, tyNamespace)
+      result[1] = &" != {tyName}.{info.memberNames[scalar.defaultMember.int]}"
+  of stkStruct: # TODO: Validate.
+    raiseAssert "Unsupported type for serialization"
+
+proc emitMemberUrlSerializationHeader(e; api; names; ty: Type; name, tyNamespace: string):
     (string, bool) =
-  let ty = m.bare.ty
   if ty.containers.len != 0:
     # TODO: Validate.
     assert ty.containers.len == 1
@@ -516,56 +553,13 @@ proc emitMemberUrlSerializationHeader(e; api; names; m: StructMember; name, tyNa
     e.emit &"if (!p.{name}.isNull)"
     (&"p.{name}.get", true)
   else:
-    let (prefix, suffix) = case ty.scalar.kind:
-      of stkBool:
-        if stfHasDefault in ty.scalar.flags:
-          ((if ty.scalar.defaultBool: "!" else: ""), "")
-        else:
-          ("", " != Ternary.unknown")
-      of stkF32, stkF64:
-        ("!", ".isNaN")
-      of stkI32:
-        if ty.scalar.defaultI32 == 0:
-          ("", "")
-        else:
-          ("", &" != {ty.scalar.defaultI32}")
-      of stkU32:
-        if ty.scalar.defaultU32 == 0:
-          ("", "")
-        else:
-          ("", &" != {ty.scalar.defaultU32}u")
-      of stkI64:
-        if ty.scalar.defaultI64 == 0:
-          ("", "")
-        else:
-          ("", &" != {ty.scalar.defaultI64}")
-      of stkU64:
-        if ty.scalar.defaultU64 == 0:
-          ("", "")
-        else:
-          ("", &" != {ty.scalar.defaultU64}u")
-      of stkDate, stkDateTime, stkDuration, stkString, stkFieldMask, stkBase64:
-        if ty.scalar.defaultString.len == 0:
-          ("", ".length")
-        else:
-          ("", &" != {Quoted ty.scalar.defaultString}")
-      of stkEnum:
-        if ty.scalar.defaultMember.int == 0:
-          ("", "")
-        else:
-          let
-            info = names.getEnumInfo(ty.scalar.enumId)
-            tyName = qualifyTypeName(api.getEnum(ty.scalar.enumId).header, info.header, tyNamespace)
-          ("", &" != {tyName}.{info.memberNames[ty.scalar.defaultMember.int]}")
-      else: # TODO: Validate.
-        raiseAssert "Unsupported type for URL serialization"
+    let (prefix, suffix) = api.getCheckAgainstDefault(names, ty.scalar, tyNamespace)
     e.emit &"if ({prefix}p.{name}{suffix})"
     ("p." & name, true)
 
-proc emitUrlSerializer(
+proc emitUrlSerializerBody(
   e; api; names; params: StructBody; paramNames: openArray[string]; tyNamespace: string;
 ) =
-  e.indent
   for i, m in params.members:
     if (
       m.bare.ty.scalar.kind == stkEnum and
@@ -574,7 +568,7 @@ proc emitUrlSerializer(
     ): continue # A 1-element enumeration will always hold its default value.
 
     let (v, canFuseSep) =
-      e.emitMemberUrlSerializationHeader(api, names, m, paramNames[i], tyNamespace)
+      e.emitMemberUrlSerializationHeader(api, names, m.bare.ty, paramNames[i], tyNamespace)
     e.emit " {\p"
     let assignment = case m.bare.ty.scalar.kind:
       of stkBool:
@@ -599,7 +593,7 @@ proc emitUrlSerializer(
       of stkF32, stkF64:
         e.emit &" serializeToJsonString(b.sink, {v});\p"
       of stkDate, stkDateTime, stkDuration, stkString, stkFieldMask, stkBase64:
-        e.emit &" b.serializeToUrl({v});\p"
+        e.emit &" b.serializeAsUrl({v});\p"
       of stkEnum:
         let tyName = qualifyTypeName(
           api.getEnum(m.bare.ty.scalar.enumId).header,
@@ -607,12 +601,87 @@ proc emitUrlSerializer(
           tyNamespace,
         )
         e.emit &" b ~= enumMemberNames!({tyName})[{v}];\p"
-      else:
+      else: # TODO: Validate.
         raiseAssert "Unsupported type for URL serialization"
-    e.emit " s = '&';\p"
+    e.emit " s = '&';\p}\p"
+
+proc emitJsonSerializerBody(e; api; names; body: StructBody; memberNames: openArray[string]) =
+  for i, m in body.members:
+    let name = memberNames[i]
+    let propertyPrefix = '"' & m.bare.name & "\":"
+    if m.bare.ty.containers.len != 0:
+      e.emit &dd"""
+      if (v.{name}.length) {{
+        b ~= s;
+        b ~= {Quoted propertyPrefix};
+        b.serializeAsJson(v.{name});
+        s = ',';
+      """
+    elif m.bare.ty.needsNullable:
+      e.emit &dd"""
+      if (!v.{name}.isNull) {{
+        b ~= s;
+        b ~= {Quoted propertyPrefix};
+        b.serializeAsJson(v.{name}.get);
+        s = ',';
+      """
+    else:
+      block blk:
+        let
+          valueWritingCode =
+            case m.bare.ty.scalar.kind
+            of stkBool:
+              if stfHasDefault in m.bare.ty.scalar.flags:
+                # TODO: Optimize.
+                &"b ~= {Quoted $not m.bare.ty.scalar.defaultBool}"
+              else:
+                &"b ~= boolMemberNames[v.{name} != Ternary.no]"
+            of stkI32, stkU32:
+              &"put(b.sink, v.{name}.toChars)"
+            of stkEnum:
+              let tyName = qualifyTypeName(
+                api.getEnum(m.bare.ty.scalar.enumId).header,
+                names.getEnumInfo(m.bare.ty.scalar.enumId).header,
+                "",
+              )
+              # TODO: Optimize for enums with 1 or 2 members.
+              &"b ~= enumMemberNames!({tyName})[v.{name}]"
+            of stkStruct:
+              # TODO: Optimize.
+              e.emit &dd"""
+              {{
+                const m = b.mark;
+                b ~= s;
+                b ~= {Quoted propertyPrefix};
+                if (b.serializeAsJson(v.{name}))
+                  s = ',';
+                else
+                  b.reset(m);
+              """
+              break blk
+            else:
+              &"b.serializeAsJson(v.{name})"
+          (prefix, suffix) = api.getCheckAgainstDefault(names, m.bare.ty.scalar, "")
+        e.emit &dd"""
+        if ({prefix}v.{name}{suffix}) {{
+          b ~= s;
+          b ~= {Quoted propertyPrefix};
+          {valueWritingCode};
+          s = ',';
+        """
     e.emit "}\p"
 
-  e.dedent
+proc emitJsonSerializer(e; api; names; st: StructDecl; info: TypeDeclNameInfo) =
+  let name = qualifyTypeName(st.header, info.header, "")
+  e.emit &"bool serializeAsJson(scope ref Buffer b, scope ref const {name} v) {{\p"
+  if st.body.members.len != 0:
+    e.indent
+    e.emit "char s = '{';\p"
+    e.emitJsonSerializerBody api, names, st.body, info.memberNames
+    e.dedent
+    e.emit " return b.finishJsonObject(s);\p}\p"
+  else:
+    e.emit " b ~= `{}`;\p return false;\p}\p"
 
 func initRootSerializationCodegen(c; settings): Codegen =
   declareCodegen('#', e):
@@ -668,10 +737,27 @@ func initRootSerializationCodegen(c; settings): Codegen =
 
     "commonUrlSerializer":
       e.emit:
-        "void serializeToUrl(scope ref Buffer b, scope ref const CommonParameters p, char s) {\p"
-      e.emitUrlSerializer c.api, settings.names, c.api.params, settings.names.paramNames, ""
+        "void serializeAsUrl(scope ref Buffer b, scope ref const CommonParameters p, char s) {\p"
+      e.indent
+      e.emitUrlSerializerBody c.api, settings.names, c.api.params, settings.names.paramNames, ""
+      e.dedent
       e.emit "}\p"
       e.endSection
+
+    "jsonSerializersForContainers":
+      # e.emit "alias serializeAsJson() = serializeAsJsonWith!(.serializeAsJson);\p"
+        # It's fascinating this is possible in D, but we don't need that much flexibility here.
+      e.emit dd"""
+      mixin jsonSerializersForContainers _containers;
+      alias serializeAsJson = _containers.serializeAsJson;
+      """
+      e.endSection
+
+    "jsonSerializers":
+      for i, st in c.api.structDecls:
+        if tdfUsedInRequest in st.header.flags:
+          e.emitJsonSerializer c.api, settings.names, st, settings.names.structNameInfos[i]
+          e.endSection
 
 #[
   Method declarations.

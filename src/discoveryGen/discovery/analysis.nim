@@ -440,15 +440,22 @@ proc analyzeMethods(c; methods: OrderedTable[string, DiscoveryRestMethod]): seq[
       (positionalParams, params) = c.analyzeMethodParameters(m.parameters, m.parameterOrder)
       requestId =
         if request =? m.request:
+          # TODO: There might be an inline alias definition.
           let requestId = c.structRegistry[request.`$ref`]
           c.api.markTypeDecls requestId, tdfUsedInRequest
           requestId
         else:
           StructId(-1)
-      responseId = c.structRegistry[m.response.`$ref`]
+      responseId =
+        if response =? m.response:
+          # TODO: A response might be an alias, not a struct.
+          let responseId = c.structRegistry[response.`$ref`]
+          c.api.markTypeDecls responseId, tdfUsedInResponse
+          responseId
+        else:
+          StructId(-1)
     c.api.markTypeDecls positionalParams, tdfUsedInRequest
     c.api.markTypeDecls params.members, tdfUsedInRequest
-    c.api.markTypeDecls responseId, tdfUsedInResponse
 
     result[i] = Method(
       name: name,

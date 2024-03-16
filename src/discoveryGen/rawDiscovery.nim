@@ -158,7 +158,7 @@ type
       ## HTTP method used by this method.
     request*: Option[DiscoveryRequest]
       ## The schema for the request.
-    response*: DiscoveryResponse
+    response*: Option[DiscoveryResponse]
       ## The schema for the response.
 
   DiscoveryRestResource* = object

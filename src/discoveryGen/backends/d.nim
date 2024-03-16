@@ -778,7 +778,8 @@ proc emitMethodDecl(e; api; names; m: Method) =
   """
   if m.requestId.int >= 0:
     e.emit &"  alias Request = t.{names.getStructInfo(m.requestId).header.name}; ///\p"
-  e.emit &"  alias Response = t.{names.getStructInfo(m.responseId).header.name}; ///\p"
+  if m.responseId.int >= 0:
+    e.emit &"  alias Response = t.{names.getStructInfo(m.responseId).header.name}; ///\p"
   e.endSection
 
   e.emitStructBody api, names, "t.", m.params:

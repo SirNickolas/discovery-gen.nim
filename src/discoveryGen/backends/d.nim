@@ -545,8 +545,8 @@ proc emitMemberUrlSerializationHeader(e; api; names; ty: Type; name, tyNamespace
     (string, bool) =
   if ty.containers.len != 0:
     # TODO: Validate.
-    assert ty.containers.len == 1
-    assert ty.containers[0] == ckArray
+    doAssert ty.containers.len == 1
+    doAssert ty.containers[0] == ckArray
     e.emit &"foreach (v; p.{name})"
     ("v", false)
   elif ty.needsNullable:
@@ -608,80 +608,73 @@ proc emitUrlSerializerBody(
 proc emitJsonSerializerBody(e; api; names; body: StructBody; memberNames: openArray[string]) =
   for i, m in body.members:
     let name = memberNames[i]
-    let propertyPrefix = '"' & m.bare.name & "\":"
-    if m.bare.ty.containers.len != 0:
-      e.emit &dd"""
-      if (v.{name}.length) {{
-        b ~= s;
-        b ~= {Quoted propertyPrefix};
-        b.serializeAsJson(v.{name});
-        s = ',';
-      """
-    elif m.bare.ty.needsNullable:
-      e.emit &dd"""
-      if (!v.{name}.isNull) {{
-        b ~= s;
-        b ~= {Quoted propertyPrefix};
-        b.serializeAsJson(v.{name}.get);
-        s = ',';
-      """
-    else:
-      block blk:
-        let
-          valueWritingCode =
-            case m.bare.ty.scalar.kind
-            of stkBool:
-              if stfHasDefault in m.bare.ty.scalar.flags:
-                # TODO: Optimize.
-                &"b ~= {Quoted $not m.bare.ty.scalar.defaultBool}"
-              else:
-                &"b ~= boolMemberNames[v.{name} != Ternary.no]"
-            of stkI32, stkU32:
-              &"put(b.sink, v.{name}.toChars)"
-            of stkEnum:
-              let tyName = qualifyTypeName(
-                api.getEnum(m.bare.ty.scalar.enumId).header,
-                names.getEnumInfo(m.bare.ty.scalar.enumId).header,
-                "",
-              )
-              # TODO: Optimize for enums with 1 or 2 members.
-              &"b ~= enumMemberNames!({tyName})[v.{name}]"
-            of stkStruct:
-              # TODO: Optimize.
-              e.emit &dd"""
-              {{
-                const m = b.mark;
-                b ~= s;
-                b ~= {Quoted propertyPrefix};
-                if (b.serializeAsJson(v.{name}))
-                  s = ',';
-                else
-                  b.reset(m);
-              """
-              break blk
-            else:
-              &"b.serializeAsJson(v.{name})"
-          (prefix, suffix) = api.getCheckAgainstDefault(names, m.bare.ty.scalar, "")
-        e.emit &dd"""
-        if ({prefix}v.{name}{suffix}) {{
-          b ~= s;
-          b ~= {Quoted propertyPrefix};
-          {valueWritingCode};
-          s = ',';
-        """
-    e.emit "}\p"
+    var propertyPrefix = '"' & m.bare.name & "\":"
+    let def =
+      if m.bare.ty.containers.len != 0 or stfHasDefault not_in m.bare.ty.scalar.flags:
+        ""
+      else:
+        case m.bare.ty.scalar.kind
+        of stkBool:
+          propertyPrefix &= $not m.bare.ty.scalar.defaultBool
+          let cond = if m.bare.ty.scalar.defaultBool: "!" else: ""
+          e.emit &".addB(b, {Quoted propertyPrefix}, {cond}v.{name})\p"
+          continue
+        of stkI32:
+          if m.bare.ty.scalar.defaultI32 == 0:
+            ""
+          else:
+            &", {m.bare.ty.scalar.defaultI32}"
+        of stkU32:
+          if m.bare.ty.scalar.defaultU32 == 0:
+            ""
+          else:
+            &", {m.bare.ty.scalar.defaultU32}"
+        of stkI64:
+          if m.bare.ty.scalar.defaultI64 == 0:
+            ""
+          else:
+            &", {m.bare.ty.scalar.defaultI64}"
+        of stkU64:
+          if m.bare.ty.scalar.defaultU64 == 0:
+            ""
+          else:
+            &", {m.bare.ty.scalar.defaultU32}"
+        of stkDate, stkDateTime, stkDuration, stkString, stkFieldMask, stkBase64:
+          if m.bare.ty.scalar.defaultString.len == 0:
+            ""
+          else:
+            &", {Quoted m.bare.ty.scalar.defaultString}"
+        of stkEnum:
+          let en = api.getEnum m.bare.ty.scalar.enumId
+          if en.members.len <= 2:
+            if en.members.len == 2:
+              let
+                info = names.getEnumInfo m.bare.ty.scalar.enumId
+                other = m.bare.ty.scalar.defaultMember.int xor 0x1
+                cond = if other == 0: "" else: "!"
+              propertyPrefix &= '"'
+              propertyPrefix &= en.members[other].bare.name
+              propertyPrefix &= '"'
+              e.emit &".addB(b, {Quoted propertyPrefix}, {cond}!v.{name})\p"
+            continue
+          doAssert m.bare.ty.scalar.defaultMember.int == 0 # TODO: Handle another case.
+          ""
+        else: ""
+
+    let module = if m.bare.ty.scalar.kind < stkEnum: "" else: "!m"
+    e.emit &".add{module}(b, {Quoted propertyPrefix}, v.{name}{def})\p"
 
 proc emitJsonSerializer(e; api; names; st: StructDecl; info: TypeDeclNameInfo) =
   let name = qualifyTypeName(st.header, info.header, "")
-  e.emit &"bool serializeAsJson(scope ref Buffer b, scope ref const {name} v) {{\p"
+  e.emit &"bool serializeAsJson(scope ref Buffer b, scope ref const {name} v) "
   if st.body.members.len != 0:
+    e.emit "=> '{'\p"
     e.indent
-    e.emit "char s = '{';\p"
     e.emitJsonSerializerBody api, names, st.body, info.memberNames
+    e.emit ".finish(b);\p"
     e.dedent
-    e.emit " return b.finishJsonObject(s);\p}\p"
   else:
-    e.emit " b ~= `{}`;\p return false;\p}\p"
+    e.emit "{\p b ~= `{}`;\p return false;\p}\p"
 
 func initRootSerializationCodegen(c; settings): Codegen =
   declareCodegen('#', e):
@@ -718,6 +711,12 @@ func initRootSerializationCodegen(c; settings): Codegen =
       e.emit "nothrow pure @safe:\p"
       e.endSection
 
+    "moduleAlias":
+      e.emit fmt do:
+        "private alias m = {settings.package}.{settings.names.rootResource}." &
+        rootSerializationModule & ";\p"
+      e.endSection
+
     "enumMemberNames":
       e.emit "immutable {\p"
       e.indent
@@ -744,14 +743,14 @@ func initRootSerializationCodegen(c; settings): Codegen =
       e.emit "}\p"
       e.endSection
 
-    "jsonSerializersForContainers":
-      # e.emit "alias serializeAsJson() = serializeAsJsonWith!(.serializeAsJson);\p"
-        # It's fascinating this is possible in D, but we don't need that much flexibility here.
-      e.emit dd"""
-      mixin jsonSerializersForContainers _containers;
-      alias serializeAsJson = _containers.serializeAsJson;
-      """
-      e.endSection
+    # "jsonSerializersForContainers":
+    #   # e.emit "alias serializeAsJson() = serializeAsJsonWith!(.serializeAsJson);\p"
+    #     # It's fascinating this is possible in D, but we don't need that much flexibility here.
+    #   e.emit dd"""
+    #   mixin jsonSerializersForContainers _containers;
+    #   alias serializeAsJson = _containers.serializeAsJson;
+    #   """
+    #   e.endSection
 
     "jsonSerializers":
       for i, st in c.api.structDecls:
